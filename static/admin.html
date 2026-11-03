@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Operator &middot; The Engineer-Bot</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body data-page="admin">
+<div class="admin">
+  <header class="admin-head">
+    <div>
+      <div class="eyebrow">The Engineer-Bot</div>
+      <h1 class="admin-title">Operator</h1>
+    </div>
+    <div class="admin-clock" id="round-clock">05:30</div>
+    <div class="controls">
+      <button id="btn-start" class="primary">Mulai</button>
+      <button id="btn-pause">Jeda</button>
+      <button id="btn-resume">Lanjut</button>
+      <button id="btn-reset" class="danger">Reset</button>
+    </div>
+    <div class="mode-switch" id="mode-switch">
+      <button data-mode="ai">AI</button>
+      <button data-mode="keyword">Kata kunci</button>
+      <button data-mode="manual">Manual</button>
+    </div>
+  </header>
+
+  <div class="columns" id="columns"></div>
+
+  <div class="foot-grid">
+    <section class="card">
+      <div class="eyebrow">Status sistem</div>
+      <div class="kv"><span>Mode juri</span><span id="f-mode">-</span></div>
+      <div class="kv"><span>AI</span><span id="f-ai">-</span></div>
+      <div class="kv"><span>Model</span><span id="f-model">-</span></div>
+      <div class="kv"><span>Latensi AI terakhir</span><span id="f-latency">-</span></div>
+      <div class="kv"><span>Perangkat A</span><span id="f-dev-a">-</span></div>
+      <div class="kv"><span>Perangkat B</span><span id="f-dev-b">-</span></div>
+    </section>
+    <section class="card">
+      <div class="eyebrow">Pintasan papan tombol</div>
+      <div class="kv">
+        <span>Selesai Tim A</span>
+        <span><input class="shortcut-input" id="key-a" maxlength="1" value="a"></span>
+      </div>
+      <div class="kv">
+        <span>Selesai Tim B</span>
+        <span><input class="shortcut-input" id="key-b" maxlength="1" value="l"></span>
+      </div>
+      <p class="hint">Shift + tombol = Ulang. Berlaku saat fokus tidak di kolom teks.</p>
+    </section>
+    <section class="card">
+      <div class="eyebrow">Cara pakai singkat</div>
+      <p class="hint">
+        Mulai &rarr; tim mengetik &rarr; perintah diterima &rarr; robot menjalankan &rarr;
+        tekan <b>Selesai</b> untuk giliran berikutnya. <b>Ulang</b> membatalkan efek perintah
+        terakhir, tetapi tetap terhitung sebagai instruksi.
+      </p>
+    </section>
+  </div>
+</div>
+<script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Engineer-Bot</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body data-page="team">
+<div class="team">
+  <header class="team-head">
+    <div>
+      <div class="eyebrow">The Engineer-Bot</div>
+      <h1 class="team-name" id="team-name">TIM</h1>
+      <div class="team-counter" id="counter">Pemain 1 dari 14 &middot; Sisa instruksi: 14</div>
+    </div>
+    <div class="turn-clock" id="turn-clock">--</div>
+  </header>
+
+  <main class="team-main">
+    <section class="prompt-area">
+      <div class="status-line" id="status">Menunggu ronde dimulai</div>
+      <form class="answer-row" id="answer-form" autocomplete="off">
+        <input id="answer" maxlength="80" placeholder="Ketik satu instruksi..." disabled
+               autocapitalize="off" spellcheck="false">
+        <button id="send" class="primary" type="submit" disabled>Kirim</button>
+      </form>
+      <div class="hint" id="hint">Satu perintah, satu langkah. Tekan Enter untuk mengirim.</div>
+    </section>
+
+    <section class="history-wrap">
+      <div class="eyebrow">Riwayat instruksi</div>
+      <ol class="history" id="history"></ol>
+    </section>
+  </main>
+
+  <footer class="team-foot">
+    <span id="round-clock">Sisa ronde --:--</span>
+    <label class="toggle"><input type="checkbox" id="tts"> Suara</label>
+  </footer>
+</div>
+
+<div class="banner" id="banner" hidden>
+  <div>
+    <h2 id="banner-title"></h2>
+    <p id="banner-text"></p>
+  </div>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
