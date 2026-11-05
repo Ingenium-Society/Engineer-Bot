@@ -357,3 +357,20 @@ def test_optimal_solution_reaches_finished_in_ten_steps():
     assert state.finished is True
     assert state.milestones == 7
     assert seen == EXPECTED_FLAGS
+
+
+# ------------------------------------------------------------------- summary
+
+
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        (Command(verb="BELOK", arah="KANAN", n=90), "BELOK KANAN 90"),
+        (Command(verb="MAJU", n=2), "MAJU 2"),
+        (Command(verb="AMBIL", objek="gelas"), "AMBIL gelas"),
+        (Command(verb="TUANG", objek="gelas", target="corong"), "TUANG gelas corong"),
+        (Command(verb="INVALID", alasan="ngawur"), "INVALID"),
+    ],
+)
+def test_command_summary_is_readable_at_a_glance(command, expected):
+    assert command.summary == expected

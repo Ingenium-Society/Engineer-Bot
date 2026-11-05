@@ -178,8 +178,8 @@ per-laptop flag and the browser nags about it — use it as the backup, not the 
 | Step | Action |
 |---|---|
 | Start | **Mulai** — team A opens, 20 s per instruction |
-| Each turn | the team on turn types or speaks → the judge answers → the robot acts |
-| Accepted | press **Selesai** — the floor moves to the other team |
+| Each turn | the team on turn types or speaks → the judge proposes a verdict → **you confirm it** |
+| Confirmed | the robot acts, then press **Selesai** — the floor moves to the other team |
 | Wrong move | press **Ulang** — the state reverts, the instruction still counts, the turn passes |
 | Nobody types in 20 s | the server rejects with *Waktu habis.* and passes the turn on its own |
 | A team is stuck on screen | the column turns red after 30 s in LOCKED |
@@ -188,8 +188,30 @@ per-laptop flag and the browser nags about it — use it as the backup, not the 
 Only the team on turn has an enabled **Ketik untuk pemain** field and a live mic; the
 other column is dimmed to `WAITING`.
 
-Judge modes: **AI** (default, keyword fallback), **Kata kunci** (no network at all),
-**Manual** (every submission waits for you to press *Paksa terima* / *Paksa tolak*).
+### Confirming verdicts — the default
+
+`JUDGE_MODE=confirm` is the default, because a translation is a guess and an instruction
+costs a team a turn. The AI does the work; a human accepts it.
+
+```
+team submits → the judge proposes → the column goes gold and shows:
+                 MENUNGGU KONFIRMASI
+                 TERIMA · MAJU 2 LANGKAH
+                 AI baca: MAJU 2
+               → you press Terima or Tolak
+```
+
+- **Terima** applies the proposal and the robot acts.
+- **Tolak** rejects it with *Ditolak oleh operator.* — use this when the AI read the
+  sentence wrong, or when the team deserves a rejection the parser missed.
+- A proposal that the validator already rejected cannot be accepted: there is no legal
+  state to apply, so **Terima** on a REJECT still rejects, with the validator's reason.
+- The 20 s turn clock stops while you decide; the 330 s round clock does not. Confirm
+  briskly.
+
+The other two modes judge instantly, with no confirmation step: **AI** (keyword fallback)
+and **Kata kunci** (no network at all). Switch to them only when you trust the parse and
+want speed.
 
 ### Measuring AI latency at the venue
 
@@ -308,6 +330,7 @@ venue machine, switch to `base`** — it is roughly twice as fast and still got
 | `TURN_SECONDS` | `20` | to type one instruction |
 | `PLAY_SECONDS` | `330` | whole round |
 | `FILTER_SECONDS` | `10` | `tunggu` must reach this to set `filtered` |
+| `JUDGE_MODE` | `confirm` | `confirm` (operator approves every verdict) \| `ai` \| `keyword` |
 | `STT_MODE` | `browser` | `browser` \| `server` \| `off` |
 | `STT_LANG` | `id-ID` | passed to the speech engine |
 | `AUTO_SUBMIT_DELAY_MS` | `2000` | countdown before a transcript is sent |
@@ -374,6 +397,10 @@ Changes from the original brief, both requested after the first build:
 - **No hardware.** The ESP32 / serial layer is gone: `device.py`, `pyserial`, the
   `SERIAL_*` settings and the `ACCEPT|…` line protocol were removed. The server laptop now
   drives the projector instead.
+- **Confirmation by default.** `JUDGE_MODE=confirm`: the judge proposes, the operator
+  accepts. A mistranslation should never cost a team an instruction without a human
+  looking at it. The old `manual` mode was the same idea with a worse name, so it was
+  renamed and made the default.
 
 Small additions, all to keep the robot's answers understandable:
 
@@ -383,9 +410,9 @@ Small additions, all to keep the robot's answers understandable:
 - `Tidak terdengar. Coba lagi.` when the microphone opened but heard nothing — the brief
   lists the other voice statuses but not the silent case.
 
-`Paksa terima` cannot invent a legal move: if the validator rejects the command there is
-no new state to apply, so it stays rejected with the validator's reason. Manual mode
-still lets the operator approve anything the validator accepts.
+`Terima` cannot invent a legal move: if the validator rejects the command there is no new
+state to apply, so it stays rejected with the validator's reason. Confirmation lets the
+operator catch a bad *translation*, not overrule the board.
 
 A team page may only claim `source: "voice"` or `"keyboard"`; anything else is treated as
 keyboard. `"operator"` is reserved for the admin socket, so a player cannot log a
@@ -399,24 +426,25 @@ laptops, once, before the day.
 
 | # | Test | Expected |
 |---|---|---|
-| 1 | Open `/screen` on the server laptop, F11, start a round | the projector shows `GILIRAN TIM A`, team B reads `Menunggu giliran Tim A` |
+| 1 | Open `/screen` on the server laptop, fullscreen it (⌃⌘F), start a round | the projector shows `GILIRAN TIM A`, team B reads `Menunggu giliran Tim A` |
 | 2 | Type into team A's box on the other laptop | the projector mirrors the text **as it is typed** |
-| 3 | Submit an accepted instruction | 0.7 s of `MEMPROSES…`, then the green `DITERIMA` flash, then the next team |
-| 4 | Submit `maju` (no number) | red `DITOLAK` shake with *Berapa langkah?*, and the turn passes to B |
-| 5 | Do nothing for 20 s | *Waktu habis.*, the turn passes, the projector says the same |
-| 6 | Reload `/screen` mid-round | it shows the current state and does **not** replay the last verdict |
-| 7 | Open `/team/a` over **https** on a second laptop, press the mic | the browser asks for microphone permission once |
-| 8 | Say "maju dua langkah" | `Mendengarkan...` → transcript appears → countdown → sent by itself |
-| 9 | Same on **Chrome** and on **Edge** | identical behaviour; both use the same engine |
-| 10 | Type a character during the countdown | countdown disappears, nothing is sent, **Kirim** still works |
-| 11 | Press **Ulangi** | records again, replaces the transcript |
-| 12 | Deny the permission prompt | `Mikrofon tidak tersedia, silakan ketik`, mic disabled, typing still works |
-| 13 | Unplug a USB microphone mid-turn, then press the mic | `no-mic`, keyboard unaffected, **no instruction used up** |
-| 14 | Unplug the internet, press the mic (browser mode) | `offline`, keyboard unaffected — then repeat with `STT_MODE=server` |
-| 15 | Open `/team/a` over **http** from another laptop | mic refuses to work; the keyboard still does (this is why HTTPS matters) |
-| 16 | Open the admin page during all of the above | the team's `Suara` column matches what the page shows |
-| 17 | `STT_MODE=off`, reload | no mic button at all, status reads *Ketik satu instruksi* |
-| 18 | Let the turn timer run out while listening | mic closes, `Waktu habis.`, nothing submitted |
+| 3 | Submit an accepted instruction | the admin column goes gold with `TERIMA · …`, the projector says `MENUNGGU JURI…`, and **nothing moves** until you press Terima |
+| 4 | Press **Tolak** on a proposal you know is right | the team gets *Ditolak oleh operator.* and loses the turn |
+| 5 | Submit `maju` (no number) | the proposal is `TOLAK · Berapa langkah?`; **Terima** still rejects |
+| 6 | Do nothing for 20 s | *Waktu habis.*, the turn passes, the projector says the same |
+| 7 | Reload `/screen` mid-round | it shows the current state and does **not** replay the last verdict |
+| 8 | Open `/team/a` over **https** on a second laptop, press the mic | the browser asks for microphone permission once |
+| 9 | Say "maju dua langkah" | `Mendengarkan...` → transcript appears → countdown → sent by itself |
+| 10 | Same on **Chrome** and on **Edge** | identical behaviour; both use the same engine |
+| 11 | Type a character during the countdown | countdown disappears, nothing is sent, **Kirim** still works |
+| 12 | Press **Ulangi** | records again, replaces the transcript |
+| 13 | Deny the permission prompt | `Mikrofon tidak tersedia, silakan ketik`, mic disabled, typing still works |
+| 14 | Unplug a USB microphone mid-turn, then press the mic | `no-mic`, keyboard unaffected, **no instruction used up** |
+| 15 | Unplug the internet, press the mic (browser mode) | `offline`, keyboard unaffected — then repeat with `STT_MODE=server` |
+| 16 | Open `/team/a` over **http** from another laptop | mic refuses to work; the keyboard still does (this is why HTTPS matters) |
+| 17 | Open the admin page during all of the above | the team's `Suara` column matches what the page shows |
+| 18 | `STT_MODE=off`, reload | no mic button at all, status reads *Ketik satu instruksi* |
+| 19 | Let the turn timer run out while listening | mic closes, `Waktu habis.`, nothing submitted |
 
 ## Troubleshooting
 

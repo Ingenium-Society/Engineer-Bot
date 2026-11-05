@@ -12,7 +12,7 @@ from . import config
 Status = Literal["ACCEPT", "REJECT"]
 #: WAITING is the team whose turn it is not.
 Phase = Literal["IDLE", "WAITING", "TYPING", "JUDGING", "LOCKED", "DONE"]
-JudgeMode = Literal["ai", "keyword", "manual"]
+JudgeMode = Literal["ai", "keyword", "confirm"]
 #: Where the *translation* came from.
 Source = Literal["ai", "keyword", "manual"]
 #: How the instruction reached the server. Independent of the translator.
@@ -70,6 +70,20 @@ class Command(BaseModel):
             except ValueError:
                 return None
         return value
+
+    @property
+    def summary(self) -> str:
+        """One line an operator can check at a glance: `BELOK KANAN 90`."""
+        parts = [self.verb.value]
+        if self.arah:
+            parts.append(self.arah)
+        if self.n is not None:
+            parts.append(str(self.n))
+        if self.objek:
+            parts.append(self.objek)
+        if self.target:
+            parts.append(self.target)
+        return " ".join(parts)
 
 
 class WorldState(BaseModel):
@@ -149,6 +163,8 @@ class TeamView(BaseModel):
     round_over: bool = False
     paused: bool = False
     turn: str | None = None
+    #: True while a verdict is waiting for the operator to confirm it.
+    pending: bool = False
     stt_mode: SttMode = "browser"
     stt_lang: str = "id-ID"
     auto_submit_ms: int = 2000
@@ -164,6 +180,10 @@ class AdminTeamView(TeamView):
     fallback_used: bool = False
     locked_seconds: float = 0.0
     pending_text: str | None = None
+    #: What the judge proposes, so the operator can confirm it knowingly.
+    pending_status: Status | None = None
+    pending_message: str | None = None
+    pending_command: str | None = None
     stt_status: SttStatus | None = None
     stt_engine: str | None = None
     last_raw: str | None = None

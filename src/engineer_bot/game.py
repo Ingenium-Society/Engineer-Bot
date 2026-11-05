@@ -69,7 +69,7 @@ class Submission:
 
 @dataclass
 class Pending:
-    """A submission waiting for the operator in manual mode."""
+    """A verdict the judge proposed and the operator has not confirmed yet."""
 
     text: str
     command: Command | None
@@ -459,7 +459,7 @@ class Game:
                         state=team.state,
                         command=result.command,
                     )
-            elif self.judge_mode == "manual":
+            elif self.judge_mode == "confirm":
                 result = await self._await_operator(team, clean, translation, result)
 
         if team.generation != generation:
@@ -695,6 +695,7 @@ class Game:
             round_over=self.round_over,
             paused=self.paused,
             turn=self.turn,
+            pending=team.pending is not None,
             stt_mode=self.settings.stt_mode,  # type: ignore[arg-type]
             stt_lang=self.settings.stt_lang,
             auto_submit_ms=self.settings.auto_submit_delay_ms,
@@ -719,6 +720,13 @@ class Game:
             fallback_used=team.fallback_used,
             locked_seconds=round(locked_seconds, 1),
             pending_text=team.pending.text if team.pending is not None else None,
+            pending_status=team.pending.proposed.status if team.pending is not None else None,
+            pending_message=team.pending.proposed.message if team.pending is not None else None,
+            pending_command=(
+                team.pending.command.summary
+                if team.pending is not None and team.pending.command is not None
+                else None
+            ),
             stt_status=team.stt_status,
             stt_engine=team.stt_engine,
             last_raw=team.last_raw,
@@ -757,6 +765,7 @@ class Game:
             "turn_phase": active.phase if active else "IDLE",
             "turn_seconds_left": round(self._turn_left(active), 1) if active else 0.0,
             "draft": active.draft if active else "",
+            "pending": bool(active and active.pending is not None),
             "seq": self.seq,
             "last": self.last_event,
             "teams": {

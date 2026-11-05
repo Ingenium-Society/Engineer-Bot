@@ -410,3 +410,146 @@ async def test_submitting_clears_the_draft(make_game, clock):
     await game.set_draft("a", "maju 2")
     await game.submit("a", "maju 2")
     assert game.teams["a"].draft == ""
+
+
+# ------------------------------------------------------------- confirmation
+
+
+async def test_confirm_mode_holds_the_verdict_until_the_operator_agrees(make_game, clock):
+    game = make_game()
+    game.judge_mode = "confirm"
+    await game.start()
+
+    task = asyncio.ensure_future(game.submit("a", "maju 2"))
+    await settle()
+
+    team = game.teams["a"]
+    assert team.phase == "JUDGING"
+    assert team.pending is not None
+    assert team.pending.proposed.status == "ACCEPT"
+    assert team.state.tile == (0, 0), "nothing may move before confirmation"
+
+    await game.force("a", "accept")
+    await task
+
+    assert team.phase == "LOCKED"
+    assert team.state.tile == (0, 2)
+    assert team.last is not None and team.last.status == "ACCEPT"
+
+
+async def test_confirm_mode_lets_the_operator_turn_an_accept_into_a_reject(make_game, clock):
+    game = make_game()
+    game.judge_mode = "confirm"
+    await game.start()
+
+    task = asyncio.ensure_future(game.submit("a", "maju 2"))
+    await settle()
+    await game.force("a", "reject")
+    await task
+
+    team = game.teams["a"]
+    assert team.last is not None and team.last.status == "REJECT"
+    assert team.last.message == config.MSG_OPERATOR_REJECT
+    assert team.state.tile == (0, 0)
+
+
+async def test_confirm_cannot_accept_what_the_validator_rejected(make_game, clock):
+    game = make_game()
+    game.judge_mode = "confirm"
+    await game.start()
+
+    task = asyncio.ensure_future(game.submit("a", "maju"))
+    await settle()
+    assert game.teams["a"].pending.proposed.status == "REJECT"
+
+    await game.force("a", "accept")
+    await task
+
+    team = game.teams["a"]
+    assert team.last is not None and team.last.status == "REJECT"
+    assert team.last.message == config.MSG_NEED_STEPS
+    assert team.state.tile == (0, 0)
+
+
+async def test_admin_sees_the_proposal_while_it_waits(make_game):
+    game = make_game()
+    game.judge_mode = "confirm"
+    await game.start()
+
+    task = asyncio.ensure_future(game.submit("a", "belok kanan 90"))
+    await settle()
+
+    team_view = game.admin_view()["teams"]["a"]
+    assert team_view["pending"] is True
+    assert team_view["pending_text"] == "belok kanan 90"
+    assert team_view["pending_status"] == "ACCEPT"
+    assert team_view["pending_message"] == "BELOK KANAN 90"
+    assert team_view["pending_command"] == "BELOK KANAN 90"
+
+    await game.force("a", "accept")
+    await task
+    assert game.admin_view()["teams"]["a"]["pending"] is False
+
+
+async def test_the_screen_knows_the_room_is_waiting_for_a_human(make_game):
+    game = make_game()
+    game.judge_mode = "confirm"
+    await game.start()
+
+    task = asyncio.ensure_future(game.submit("a", "maju 2"))
+    await settle()
+    assert game.screen_view()["pending"] is True
+
+    await game.force("a", "accept")
+    await task
+    assert game.screen_view()["pending"] is False
+
+
+async def test_confirm_mode_still_uses_the_ai_when_available(make_game, monkeypatch):
+    """The operator confirms the AI's reading, not a keyword guess."""
+
+    class StubAI:
+        available = True
+        last_error = None
+
+        async def translate(self, text):
+            from engineer_bot.models import Command, TranslationResult
+
+            return TranslationResult(
+                command=Command(verb="MAJU", n=2), source="ai", latency_ms=12.0
+            )
+
+    game = make_game(ai=StubAI())
+    game.judge_mode = "confirm"
+    await game.start()
+
+    task = asyncio.ensure_future(game.submit("a", "maju dua"))
+    await settle()
+    assert game.teams["a"].pending.command is not None
+    assert game.teams["a"].pending.command.n == 2
+    await game.force("a", "accept")
+    await task
+    assert game.teams["a"].records[-1].source == "ai"
+
+
+# --------------------------------------------------------------- judge mode
+
+
+def test_confirm_is_the_deployed_default(monkeypatch):
+    monkeypatch.delenv("JUDGE_MODE", raising=False)
+    assert config.Settings.from_env().judge_mode == "confirm"
+
+
+def test_the_old_manual_value_now_means_confirm(monkeypatch):
+    monkeypatch.setenv("JUDGE_MODE", "manual")
+    assert config.Settings.from_env().judge_mode == "confirm"
+
+
+def test_an_unknown_judge_mode_falls_back_to_confirm(monkeypatch):
+    monkeypatch.setenv("JUDGE_MODE", "banana")
+    assert config.Settings.from_env().judge_mode == "confirm"
+
+
+def test_the_engine_itself_defaults_to_instant_judging(make_game):
+    """Tests and scripts get deterministic behaviour; the app sets the mode."""
+    assert make_game().judge_mode == "ai"

@@ -49,6 +49,7 @@ def make_game(logdir, clock, monkeypatch):
     monkeypatch.setattr(config, "REJECT_HOLD_SECONDS", 0.01)
 
     def factory(**overrides):
+        ai = overrides.pop("ai", None)
         settings = config.Settings(
             max_instructions=overrides.pop("max_instructions", 14),
             turn_seconds=overrides.pop("turn_seconds", 20.0),
@@ -56,6 +57,6 @@ def make_game(logdir, clock, monkeypatch):
             deepseek_api_key="",
             **overrides,
         )
-        return Game(settings, clock=clock, log_dir=logdir)
+        return Game(settings, ai=ai, clock=clock, log_dir=logdir)
 
     return factory

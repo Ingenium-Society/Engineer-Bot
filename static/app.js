@@ -355,7 +355,9 @@
           ? 'Giliranmu! Bicara atau ketik satu instruksi'
           : 'Giliranmu! Ketik satu instruksi';
       }
-      if (view.phase === 'JUDGING') return 'Memproses...';
+      if (view.phase === 'JUDGING') {
+        return view.pending ? 'Menunggu juri...' : 'Memproses...';
+      }
       if (view.phase === 'LOCKED') {
         if (view.last && view.last.status === 'ACCEPT') {
           return 'Diterima ✔ Menunggu robot selesai';
@@ -560,9 +562,14 @@
           '<button class="primary" data-action="done">Selesai</button>' +
           '<button data-action="redo">Ulang</button>' +
         '</div>' +
+        '<div class="pending" data-role="pending" hidden>' +
+          '<div class="pending-head">Menunggu konfirmasi</div>' +
+          '<div class="pending-verdict" data-role="pending-verdict"></div>' +
+          '<div class="pending-cmd" data-role="pending-cmd"></div>' +
+        '</div>' +
         '<div class="force-row">' +
-          '<button data-action="force-accept">Paksa terima</button>' +
-          '<button data-action="force-reject">Paksa tolak</button>' +
+          '<button data-action="force-accept">Terima</button>' +
+          '<button data-action="force-reject">Tolak</button>' +
         '</div>' +
         '<div class="operator-row">' +
           '<input class="operator-input" data-role="operator" maxlength="80" ' +
@@ -609,6 +616,23 @@
       root.querySelector('[data-action="redo"]').disabled = !locked;
       root.querySelector('[data-action="force-accept"]').disabled = !pending;
       root.querySelector('[data-action="force-reject"]').disabled = !pending;
+
+      // Show what the judge proposes, not just that something is waiting.
+      root.classList.toggle('awaiting', pending);
+      var box = root.querySelector('[data-role="pending"]');
+      box.hidden = !pending;
+      if (pending) {
+        var accept = team.pending_status === 'ACCEPT';
+        var verdict = root.querySelector('[data-role="pending-verdict"]');
+        verdict.className = 'pending-verdict ' + (accept ? 'accept' : 'reject');
+        verdict.textContent =
+          (accept ? 'TERIMA' : 'TOLAK') + ' · ' + (team.pending_message || '');
+        setText(
+          root,
+          'pending-cmd',
+          team.pending_command ? 'AI baca: ' + team.pending_command : ''
+        );
+      }
 
       var stt = team.stt_status || '-';
       if (team.stt_ms != null) stt += ' · ' + Math.round(team.stt_ms) + ' ms';
@@ -815,13 +839,13 @@
       });
     }
 
-    function paintProcessing() {
+    function paintProcessing(waitingForHuman) {
       setStage(
         'processing',
         view.turn ? 'GILIRAN ' + label(view.turn) : 'MEMPROSES',
         '',
-        'MEMPROSES…',
-        'Robot sedang memeriksa instruksi',
+        waitingForHuman ? 'MENUNGGU JURI…' : 'MEMPROSES…',
+        waitingForHuman ? 'Juri memeriksa instruksi' : 'Robot sedang memeriksa instruksi',
         ''
       );
     }
@@ -912,7 +936,7 @@
         var waited = processingAt ? now - processingAt : MIN_PROCESSING_MS;
         if (waited < MIN_PROCESSING_MS) {
           if (!processingAt) processingAt = now;
-          paintProcessing();
+          paintProcessing(view.pending);
           setTimeout(paint, MIN_PROCESSING_MS - waited + 20);
           return;
         }
@@ -922,7 +946,7 @@
 
       if (view.turn_phase === 'JUDGING') {
         if (!processingAt) processingAt = now;
-        paintProcessing();
+        paintProcessing(view.pending);
         return;
       }
       processingAt = 0;
