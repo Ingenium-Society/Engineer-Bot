@@ -188,30 +188,36 @@ per-laptop flag and the browser nags about it — use it as the backup, not the 
 Only the team on turn has an enabled **Ketik untuk pemain** field and a live mic; the
 other column is dimmed to `WAITING`.
 
-### Confirming verdicts — the default
+### How a verdict is decided
 
-`JUDGE_MODE=confirm` is the default, because a translation is a guess and an instruction
-costs a team a turn. The AI does the work; a human accepts it.
+There is one flow, with no mode to set:
 
 ```
-team submits → the judge proposes → the column goes gold and shows:
+speak or type → the model reads it → the validator checks the board
+              → the column goes gold and shows what it wants to do and why:
+
                  MENUNGGU KONFIRMASI
                  TERIMA · MAJU 2 LANGKAH
                  AI baca: MAJU 2
+                 "'langka' saya baca sebagai 'langkah'."
                → you press Terima or Tolak
 ```
 
+The translation is a guess, so a person signs off on every instruction. The model is asked
+to explain its reading in the same JSON (`alasan`, ≤ 12 words) — that line is what tells
+you whether `maju dua langka` really meant two steps.
+
 - **Terima** applies the proposal and the robot acts.
-- **Tolak** rejects it with *Ditolak oleh operator.* — use this when the AI read the
-  sentence wrong, or when the team deserves a rejection the parser missed.
-- A proposal that the validator already rejected cannot be accepted: there is no legal
-  state to apply, so **Terima** on a REJECT still rejects, with the validator's reason.
+- **Tolak** rejects it with *Ditolak oleh operator.* — use it when the reading is wrong, or
+  when the team deserves a rejection the parser missed.
+- A proposal the validator already rejected cannot be accepted: there is no legal state to
+  apply, so **Terima** on a REJECT still rejects, with the validator's reason.
 - The 20 s turn clock stops while you decide; the 330 s round clock does not. Confirm
   briskly.
 
-The other two modes judge instantly, with no confirmation step: **AI** (keyword fallback)
-and **Kata kunci** (no network at all). Switch to them only when you trust the parse and
-want speed.
+When the model is unreachable the keyword parser answers instead and the explanation line
+is empty — same flow, less context. The `AI` row on the admin page tells you which one you
+are getting.
 
 ### Measuring AI latency at the venue
 
@@ -321,7 +327,7 @@ venue machine, switch to `base`** — it is roughly twice as fast and still got
 
 | Key | Default | Meaning |
 |---|---|---|
-| `DEEPSEEK_API_KEY` | *(empty)* | empty = keyword mode, no network |
+| `DEEPSEEK_API_KEY` | *(empty)* | empty = the keyword parser answers, no network |
 | `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | |
 | `DEEPSEEK_MODEL` | `deepseek-flash` | `deepseek-chat` is the legacy alias |
 | `AI_TIMEOUT_SECONDS` | `3` | then the keyword fallback takes over |
@@ -330,7 +336,6 @@ venue machine, switch to `base`** — it is roughly twice as fast and still got
 | `TURN_SECONDS` | `20` | to type one instruction |
 | `PLAY_SECONDS` | `330` | whole round |
 | `FILTER_SECONDS` | `10` | `tunggu` must reach this to set `filtered` |
-| `JUDGE_MODE` | `confirm` | `confirm` (operator approves every verdict) \| `ai` \| `keyword` |
 | `STT_MODE` | `browser` | `browser` \| `server` \| `off` |
 | `STT_LANG` | `id-ID` | passed to the speech engine |
 | `AUTO_SUBMIT_DELAY_MS` | `2000` | countdown before a transcript is sent |
@@ -354,7 +359,7 @@ extra fields carry the voice metadata; omitting them is a normal keyboard submis
 ```
 
 `/ws/admin` (PIN) sends `start`, `pause`, `resume`, `reset`, `done`, `redo`, `force`,
-`set_judge_mode`, and `operator_submit` (`{"team":"a","text":"..."}`). `/ws/screen` is
+and `operator_submit` (`{"team":"a","text":"..."}`). `/ws/screen` is
 read-only. State is pushed on every change and at least once a second, so a refreshed page
 recovers by itself.
 
@@ -397,10 +402,11 @@ Changes from the original brief, both requested after the first build:
 - **No hardware.** The ESP32 / serial layer is gone: `device.py`, `pyserial`, the
   `SERIAL_*` settings and the `ACCEPT|…` line protocol were removed. The server laptop now
   drives the projector instead.
-- **Confirmation by default.** `JUDGE_MODE=confirm`: the judge proposes, the operator
-  accepts. A mistranslation should never cost a team an instruction without a human
-  looking at it. The old `manual` mode was the same idea with a worse name, so it was
-  renamed and made the default.
+- **One judge flow, no modes.** The judge proposes and the operator accepts, always.
+  The old `ai` / `keyword` / `manual` switch is gone: a mistranslation should never
+  cost a team an instruction without a human looking at it, and an operator should
+  never have to remember which mode is set. The model also explains its reading
+  (`alasan`), which is what the operator actually judges.
 
 Small additions, all to keep the robot's answers understandable:
 

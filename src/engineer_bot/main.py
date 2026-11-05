@@ -72,7 +72,6 @@ def create_app(settings: config.Settings | None = None) -> FastAPI:
         )
         stt = SttService(build_transcriber(settings))
         await stt.startup()
-        game.judge_mode = settings.judge_mode  # type: ignore[assignment]
 
         async def notify() -> None:
             await hub.broadcast(game)
@@ -285,8 +284,6 @@ async def _handle_admin(game: Game, message: dict[str, Any]) -> None:
         await game.operator_submit(team_id, str(message.get("text", "")))
     elif kind == "force" and team_id in TEAM_IDS:
         await game.force(team_id, str(message.get("decision", "")), message.get("text"))
-    elif kind == "set_judge_mode" and message.get("mode") in config.JUDGE_MODES:
-        await game.set_judge_mode(message["mode"])
 
 
 def _as_text(value: Any) -> str | None:

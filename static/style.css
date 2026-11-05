@@ -387,6 +387,14 @@ button.link {
 
 .pending-cmd { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); }
 
+.pending-reason {
+  font-size: 0.86rem;
+  line-height: 1.4;
+  color: var(--text);
+  opacity: 0.85;
+}
+.pending-reason:empty { display: none; }
+
 .progress { height: 6px; background: var(--panel-2); border-radius: 999px; overflow: hidden; margin: 6px 0 12px; }
 .progress > span { display: block; height: 100%; background: var(--gold); width: 0; transition: width 0.3s ease; }
 

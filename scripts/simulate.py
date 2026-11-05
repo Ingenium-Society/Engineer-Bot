@@ -48,10 +48,16 @@ async def main() -> int:
     clock = FakeClock()
     settings = config.Settings(deepseek_api_key="")
     game = Game(settings, clock=clock, log_dir=config.PROJECT_ROOT / "logs")
-    game.judge_mode = "keyword"
+
+    async def always_accept(_pending):
+        return "accept"
+
+    # A dry run has no operator, so it plays the operator too.
+    game.confirm = always_accept
 
     await game.start()
-    print(f"Ronde dimulai. Giliran bergantian, {settings.max_instructions} instruksi per tim.\n")
+    print(f"Ronde dimulai. Giliran bergantian, {settings.max_instructions} instruksi per tim.")
+    print("Juri otomatis menerima setiap usulan.\n")
 
     for index, text in enumerate(OPTIMAL):
         for team in ("a", "b"):

@@ -12,7 +12,6 @@ from . import config
 Status = Literal["ACCEPT", "REJECT"]
 #: WAITING is the team whose turn it is not.
 Phase = Literal["IDLE", "WAITING", "TYPING", "JUDGING", "LOCKED", "DONE"]
-JudgeMode = Literal["ai", "keyword", "confirm"]
 #: Where the *translation* came from.
 Source = Literal["ai", "keyword", "manual"]
 #: How the instruction reached the server. Independent of the translator.
@@ -184,6 +183,7 @@ class AdminTeamView(TeamView):
     pending_status: Status | None = None
     pending_message: str | None = None
     pending_command: str | None = None
+    pending_reason: str | None = None
     stt_status: SttStatus | None = None
     stt_engine: str | None = None
     last_raw: str | None = None

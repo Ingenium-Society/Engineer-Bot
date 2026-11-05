@@ -32,7 +32,6 @@ from .models import (
     Command,
     HistoryEntry,
     InputSource,
-    JudgeMode,
     JudgeResult,
     Phase,
     Source,
@@ -132,7 +131,8 @@ class Game:
         self.settings = settings
         self.ai = ai
         self.clock = clock
-        self.judge_mode: JudgeMode = "ai"
+        #: Test seam for the human decision. None means "wait for a person".
+        self.confirm: Callable[[Pending], Awaitable[str | None]] | None = None
         self.notify = notify
         self.log_dir = Path(log_dir) if log_dir else config.PROJECT_ROOT / "logs"
 
@@ -271,10 +271,6 @@ class Game:
                 team.turn_deadline += delta
         self.paused = False
         self._running.set()
-        await self._notify()
-
-    async def set_judge_mode(self, mode: JudgeMode) -> None:
-        self.judge_mode = mode
         await self._notify()
 
     # -- timing ------------------------------------------------------------
@@ -429,7 +425,7 @@ class Game:
             result = JudgeResult(status="REJECT", message=error, state=team.state)
         else:
             assert clean is not None
-            translation = await judge.translate(clean, ai=self.ai, mode=self.judge_mode)
+            translation = await judge.translate(clean, ai=self.ai)
             result = judge.validate(
                 translation.command,
                 team.state,
@@ -459,7 +455,8 @@ class Game:
                         state=team.state,
                         command=result.command,
                     )
-            elif self.judge_mode == "confirm":
+            else:
+                # Always: the judge proposes, a human accepts. No mode, no switch.
                 result = await self._await_operator(team, clean, translation, result)
 
         if team.generation != generation:
@@ -473,9 +470,20 @@ class Game:
         translation: TranslationResult,
         proposed: JudgeResult,
     ) -> JudgeResult:
+        """Hand the proposal to the operator and wait for a human decision.
+
+        ``self.confirm`` is the test seam: the app leaves it None and a person
+        presses Terima/Tolak; tests and the dry run inject a function that
+        answers immediately.
+        """
         pending = Pending(text=clean, command=translation.command, proposed=proposed)
         team.pending = pending
         await self._notify()
+        if self.confirm is not None:
+            decision = await self.confirm(pending)
+            if decision in ("accept", "reject"):
+                pending.decision = decision
+                pending.event.set()
         await pending.event.wait()
         team.pending = None
         if pending.decision == "accept" and proposed.status == "ACCEPT":
@@ -507,7 +515,6 @@ class Game:
             and translation.source == "keyword"
             and self.ai is not None
             and getattr(self.ai, "available", False)
-            and self.judge_mode == "ai"
         )
 
         entry = HistoryEntry(
@@ -727,6 +734,11 @@ class Game:
                 if team.pending is not None and team.pending.command is not None
                 else None
             ),
+            pending_reason=(
+                team.pending.command.alasan
+                if team.pending is not None and team.pending.command is not None
+                else None
+            ),
             stt_status=team.stt_status,
             stt_engine=team.stt_engine,
             last_raw=team.last_raw,
@@ -743,7 +755,6 @@ class Game:
             "round_over": self.round_over,
             "winner": self.winner,
             "turn": self.turn,
-            "judge_mode": self.judge_mode,
             "ai_available": bool(self.ai is not None and getattr(self.ai, "available", False)),
             "ai_model": self.settings.deepseek_model if self.ai is not None else None,
             "round_seconds_left": round(self._round_left(), 1),
@@ -796,7 +807,6 @@ class Game:
                 "started": self.started,
                 "reason": reason,
                 "winner": self.winner,
-                "judge_mode": self.judge_mode,
                 "settings": {
                     "max_instructions": self.settings.max_instructions,
                     "turn_seconds": self.settings.turn_seconds,

@@ -159,7 +159,7 @@ async def test_judge_falls_back_to_keyword_when_the_ai_fails():
     recorder = Recorder([httpx.ReadTimeout("too slow")])
     client = build(recorder)
     await client.startup()
-    result = await judge.translate("maju dua langkah", ai=client, mode="ai")
+    result = await judge.translate("maju dua langkah", ai=client)
     await client.aclose()
 
     assert result.source == "keyword"
@@ -172,23 +172,23 @@ async def test_judge_uses_the_ai_when_it_works():
     recorder = Recorder()
     client = build(recorder)
     await client.startup()
-    result = await judge.translate("maju dua langkah", ai=client, mode="ai")
+    result = await judge.translate("maju dua langkah", ai=client)
     await client.aclose()
     assert result.source == "ai"
 
 
-async def test_keyword_mode_skips_the_ai_entirely():
+async def test_without_a_client_the_parser_answers_and_no_request_is_made():
     recorder = Recorder()
     client = build(recorder)
     await client.startup()
-    result = await judge.translate("maju dua langkah", ai=client, mode="keyword")
+    result = await judge.translate("maju dua langkah", ai=None)
     await client.aclose()
     assert result.source == "keyword"
     assert recorder.calls == []
 
 
 async def test_no_client_means_keyword():
-    result = await judge.translate("maju dua langkah", ai=None, mode="ai")
+    result = await judge.translate("maju dua langkah", ai=None)
     assert result.source == "keyword"
     assert result.command.verb is Verb.MAJU
 
@@ -217,3 +217,14 @@ def test_sanitize_strips_control_characters():
 
 def test_sanitize_none():
     assert judge.sanitize(None) == (None, config.MSG_EMPTY)
+
+
+async def test_the_model_explanation_survives_the_json_round_trip():
+    payload = '{"verb":"MAJU","n":2,"alasan":"langka dibaca langkah"}'
+    recorder = Recorder([httpx.Response(200, json=envelope(payload))])
+    client = build(recorder)
+    await client.startup()
+    result = await client.translate("maju dua langka")
+    await client.aclose()
+    assert result is not None
+    assert result.command.alasan == "langka dibaca langkah"

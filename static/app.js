@@ -515,12 +515,10 @@
     var els = {
       clock: $('#round-clock'),
       columns: $('#columns'),
-      modeSwitch: $('#mode-switch'),
       start: $('#btn-start'),
       pause: $('#btn-pause'),
       resume: $('#btn-resume'),
       reset: $('#btn-reset'),
-      mode: $('#f-mode'),
       ai: $('#f-ai'),
       model: $('#f-model'),
       latency: $('#f-latency'),
@@ -566,6 +564,7 @@
           '<div class="pending-head">Menunggu konfirmasi</div>' +
           '<div class="pending-verdict" data-role="pending-verdict"></div>' +
           '<div class="pending-cmd" data-role="pending-cmd"></div>' +
+          '<div class="pending-reason" data-role="pending-reason"></div>' +
         '</div>' +
         '<div class="force-row">' +
           '<button data-action="force-accept">Terima</button>' +
@@ -632,6 +631,11 @@
           'pending-cmd',
           team.pending_command ? 'AI baca: ' + team.pending_command : ''
         );
+        setText(
+          root,
+          'pending-reason',
+          team.pending_reason ? '"' + team.pending_reason + '"' : ''
+        );
       }
 
       var stt = team.stt_status || '-';
@@ -652,20 +656,14 @@
       if (team.source) meta.push('sumber: ' + team.source);
       if (team.latency_ms != null) meta.push(Math.round(team.latency_ms) + ' ms');
       if (team.command) meta.push(team.command.verb);
-      if (team.pending_text) meta.push('menunggu operator');
       setText(root, 'last-meta', meta.join('  ·  '));
     }
 
     function render(view) {
       state = view;
       els.clock.textContent = fmtClock(view.round_seconds_left);
-      els.mode.textContent = view.judge_mode;
       els.ai.textContent = view.ai_available ? 'aktif' : 'mati (kata kunci)';
       els.model.textContent = view.ai_model || '-';
-
-      Array.prototype.forEach.call(els.modeSwitch.children, function (button) {
-        button.className = button.dataset.mode === view.judge_mode ? 'active' : '';
-      });
 
       TEAM_IDS.forEach(function (teamId) {
         renderTeam(teamId, view.teams[teamId]);
@@ -718,12 +716,6 @@
       if (!text) return;
       link.send({ type: 'operator_submit', team: team, text: text });
       input.value = '';
-    });
-
-    els.modeSwitch.addEventListener('click', function (event) {
-      var button = event.target.closest('button[data-mode]');
-      if (!button) return;
-      link.send({ type: 'set_judge_mode', mode: button.dataset.mode });
     });
 
     els.start.addEventListener('click', function () { link.send({ type: 'start' }); });

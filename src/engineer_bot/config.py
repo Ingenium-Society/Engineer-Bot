@@ -177,12 +177,6 @@ SPEECH_FIXES: dict[str, str] = {
     "ambilkan": "ambil",
 }
 
-#: How the judge runs. `confirm` means every verdict waits for the operator:
-#: the AI proposes, a human accepts. That is the default, because a mistranslation
-#: should never cost a team an instruction without someone looking at it.
-JUDGE_MODES = ("ai", "keyword", "confirm")
-DEFAULT_JUDGE_MODE = "confirm"
-
 #: Speech to text
 STT_MODES = ("browser", "server", "off")
 STT_DEFAULT_MODE = "browser"
@@ -218,12 +212,15 @@ tanda baca (contoh: "maju dua langka"). Perbaiki salah dengar hanya jika
 maksudnya jelas. Jangan menebak angka, arah, atau benda yang tidak disebut.
 
 Verb yang valid: MAJU, MUNDUR, BELOK, AMBIL, TUANG, TUNGGU, TAMBAH, ADUK, TARUH.
-Format: {"verb":"MAJU","n":3,"arah":null,"objek":null,"target":null}
+Format: {"verb":"MAJU","n":3,"arah":null,"objek":null,"target":null,"alasan":"<penjelasan>"}
 - MAJU/MUNDUR butuh n (jumlah langkah, angka)
 - BELOK butuh arah ("KIRI"/"KANAN") dan n (90/180)
 - AMBIL butuh objek; TUANG butuh objek dan target
 - TUNGGU butuh n (detik)
 - TAMBAH/TARUH butuh objek dan target; ADUK butuh objek
+- "alasan" selalu diisi: maksimal 12 kata bahasa Indonesia, jelaskan bagaimana
+  kamu membaca kalimat itu — salah dengar yang kamu perbaiki, atau bagian yang
+  tidak disebut. Ini dibaca juri manusia sebelum menerima keputusanmu.
 Jika kalimat ambigu, mengandung lebih dari satu aksi, atau verb tidak dikenal:
 {"verb":"INVALID","alasan":"<alasan singkat bahasa Indonesia>"}"""
 
@@ -264,7 +261,6 @@ class Settings:
     turn_seconds: float = 20.0
     play_seconds: float = 330.0
     filter_seconds: int = FILTER_SECONDS
-    judge_mode: str = DEFAULT_JUDGE_MODE
     stt_mode: str = STT_DEFAULT_MODE
     stt_lang: str = STT_LANG
     auto_submit_delay_ms: int = AUTO_SUBMIT_DELAY_MS
@@ -282,9 +278,6 @@ class Settings:
         mode = os.getenv("STT_MODE", "").strip().lower() or STT_DEFAULT_MODE
         if mode not in STT_MODES:
             mode = STT_DEFAULT_MODE
-        judge = os.getenv("JUDGE_MODE", "").strip().lower() or DEFAULT_JUDGE_MODE
-        if judge not in JUDGE_MODES:
-            judge = DEFAULT_JUDGE_MODE
         return cls(
             deepseek_api_key=os.getenv("DEEPSEEK_API_KEY", "").strip(),
             deepseek_base_url=os.getenv("DEEPSEEK_BASE_URL", "").strip()
@@ -296,7 +289,6 @@ class Settings:
             turn_seconds=float(_int_env("TURN_SECONDS", 20)),
             play_seconds=float(_int_env("PLAY_SECONDS", 330)),
             filter_seconds=_int_env("FILTER_SECONDS", FILTER_SECONDS),
-            judge_mode=judge,
             stt_mode=mode,
             stt_lang=os.getenv("STT_LANG", "").strip() or STT_LANG,
             auto_submit_delay_ms=_int_env("AUTO_SUBMIT_DELAY_MS", AUTO_SUBMIT_DELAY_MS),

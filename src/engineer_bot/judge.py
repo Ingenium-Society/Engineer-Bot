@@ -15,7 +15,7 @@ import unicodedata
 
 from . import config
 from .keyword_parser import parse_keyword
-from .models import Command, JudgeMode, JudgeResult, TranslationResult, Verb, WorldState
+from .models import Command, JudgeResult, TranslationResult, Verb, WorldState
 
 # --------------------------------------------------------------------------
 # Sanitize
@@ -45,10 +45,9 @@ async def translate(
     text: str,
     *,
     ai=None,
-    mode: JudgeMode = "ai",
 ) -> TranslationResult:
     """Turn player text into a :class:`Command`, with the keyword parser as safety net."""
-    if mode == "keyword" or ai is None or not getattr(ai, "available", False):
+    if ai is None or not getattr(ai, "available", False):
         started = time.perf_counter()
         command = parse_keyword(text)
         return TranslationResult(

@@ -48,7 +48,13 @@ def logdir():
 def make_game(logdir, clock, monkeypatch):
     monkeypatch.setattr(config, "REJECT_HOLD_SECONDS", 0.01)
 
+    async def auto_confirm(_pending):
+        return "accept"
+
     def factory(**overrides):
+        # The engine always waits for a human verdict. Tests that are not about
+        # confirmation get an automatic "Terima"; the rest pass auto_confirm=False.
+        auto = overrides.pop("auto_confirm", True)
         ai = overrides.pop("ai", None)
         settings = config.Settings(
             max_instructions=overrides.pop("max_instructions", 14),
@@ -57,6 +63,9 @@ def make_game(logdir, clock, monkeypatch):
             deepseek_api_key="",
             **overrides,
         )
-        return Game(settings, ai=ai, clock=clock, log_dir=logdir)
+        game = Game(settings, ai=ai, clock=clock, log_dir=logdir)
+        if auto:
+            game.confirm = auto_confirm
+        return game
 
     return factory
