@@ -12,10 +12,11 @@ The AI is a **translator**, not the judge. DeepSeek turns a sentence into strict
 pure Python validator decides ACCEPT or REJECT. The game runs with no internet at all.
 
 ```
-browser (team A) ─┐
-browser (team B) ─┼─ WebSocket ─→ FastAPI ─→ judge
-projector /screen ┘                  │
-operator /admin   ─┘                 └─→ logs/round-YYYYmmdd-HHMMSS.json
+server laptop ──┬── /screen   projector, F11 on the extended display
+                └── /admin    operator, on the laptop's own display
+team A laptop ───── /team/a
+team B laptop ───── /team/b
+                        └── all four pages ── WebSocket ──→ FastAPI ─→ judge ─→ logs/
 ```
 
 ## Setup
@@ -47,12 +48,13 @@ On startup the server prints every URL you need:
 ==============================================================
   THE ENGINEER-BOT
 ==============================================================
-  Proyektor: https://192.168.1.24:8000/screen
-  Operator : https://192.168.1.24:8000/admin     (PIN 1234)
+  Proyektor: https://192.168.1.24:8000/screen      <- laptop ini, F11 di layar proyektor
+  Operator : https://192.168.1.24:8000/admin       <- laptop ini, PIN 1234
   Tim A    : https://192.168.1.24:8000/team/a
   Tim B    : https://192.168.1.24:8000/team/b
 
-  Buka /screen di laptop ini, tekan F11 untuk layar penuh.
+  Di laptop ini: https://localhost:8000/screen  dan  https://localhost:8000/admin
+  Total 3 laptop: server ini (proyektor + operator), Tim A, Tim B.
   AI       : aktif (deepseek-flash)
   Suara    : browser (id-ID)
   HTTPS    : aktif - pastikan sertifikat sudah dipercaya di laptop tim
@@ -70,6 +72,14 @@ uv run python scripts/simulate.py          # full dry run, no AI, no browser
 
 ## Event day
 
+**Three laptops, no more.** One runs everything; two play.
+
+| Laptop | What it runs |
+|---|---|
+| **Server** | the app, the projector (`/screen` on the extended display) **and** the operator page (`/admin` on its own screen) |
+| Team A | `/team/a` |
+| Team B | `/team/b` |
+
 1. **Same WiFi, no internet needed on the team laptops.** Everything (CSS, JS, fonts) is
    served by this machine. No CDN, no build step.
 2. **Fix the server's IP** so the URLs do not change when it reconnects:
@@ -82,24 +92,28 @@ uv run python scripts/simulate.py          # full dry run, no AI, no browser
    server and both team laptops to the hotspot, read the IP from the banner.
 5. Turn **automatic sleep off** (Energy Saver → *Prevent automatic sleeping*).
    A sleeping server drops every socket.
-6. Open `/admin?pin=1234` once on the operator laptop — the PIN is then stored in a
-   cookie for `/ws/admin`.
+6. Open `/admin?pin=1234` once **on the server laptop** — the PIN is then stored in a
+   cookie for `/ws/admin`. The same browser also holds `/screen`; see below.
 
-### The projector
+### The projector — one laptop, two windows
 
-The server laptop drives the screen; there is no separate display machine and no hardware
-to wire up.
+The server machine is the screen. There is no display laptop and no hardware to wire up:
+`/screen` and `/admin` are just two windows of the same browser on the same machine, one
+on each display.
 
-1. Connect the projector, set it as **Extend** (not Mirror), and drag the browser window
-   onto it.
-2. Open `/screen` **on the server laptop** and press **F11**.
-3. Leave it there for the whole session. It reconnects on its own and shows the current
-   state rather than replaying the last verdict, so a reload mid-game is safe.
-4. What the room sees: whose turn it is, the instruction **as it is typed**, a 0.7 s
-   processing beat, then a green `DITERIMA` flash or a red `DITOLAK` shake with the
-   reason, and the winner overlay at the end.
+1. Connect the projector and set it to **Extend**, not Mirror.
+2. On the **projector** display: `http://localhost:8000/screen`, then **F11**.
+3. On the **laptop's own** display: `http://localhost:8000/admin?pin=1234`.
+4. Use `localhost`, not the LAN IP — the browser trusts it, so no certificate warning on
+   the machine that matters. The team laptops still use the LAN URL from the banner.
 
-The screen is read-only — it cannot submit anything and needs no PIN.
+The screen is read-only: it cannot submit anything and needs no PIN. It reconnects on its
+own and shows the current state rather than replaying the last verdict, so a reload
+mid-game is safe.
+
+What the room sees: whose turn it is, the instruction **as it is typed**, a 0.7 s
+processing beat, then a green `DITERIMA` flash or a red `DITOLAK` shake with the reason,
+and the winner overlay at the end.
 
 ### Turn order
 

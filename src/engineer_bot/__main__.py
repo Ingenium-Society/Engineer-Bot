@@ -43,13 +43,15 @@ def banner(host: str, port: int, settings: config.Settings) -> str:
     for address in addresses:
         base = f"{scheme}://{address}:{port}"
         lines += [
-            f"  Proyektor: {base}/screen",
-            f"  Operator : {base}/admin     (PIN {settings.admin_pin})",
+            f"  Proyektor: {base}/screen      <- laptop ini, F11 di layar proyektor",
+            f"  Operator : {base}/admin       <- laptop ini, PIN {settings.admin_pin}",
             f"  Tim A    : {base}/team/a",
             f"  Tim B    : {base}/team/b",
             "",
         ]
-    lines.append("  Buka /screen di laptop ini, tekan F11 untuk layar penuh.")
+    local = f"{scheme}://localhost:{port}"
+    lines.append(f"  Di laptop ini: {local}/screen  dan  {local}/admin")
+    lines.append("  Total 3 laptop: server ini (proyektor + operator), Tim A, Tim B.")
     if settings.deepseek_api_key:
         lines.append(f"  AI       : aktif ({settings.deepseek_model})")
     else:
