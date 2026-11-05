@@ -48,7 +48,7 @@ On startup the server prints every URL you need:
 ======================================================================
   THE ENGINEER-BOT
 ======================================================================
-  Proyektor: http://localhost:8000/screen     (F11 di layar proyektor)
+  Proyektor: http://localhost:8000/screen     (layar penuh di proyektor)
   Operator : http://localhost:8000/admin      (PIN 1234)
   Tim A    : http://192.168.1.24:8000/team/a
   Tim B    : http://192.168.1.24:8000/team/b
@@ -96,18 +96,31 @@ uv run python scripts/simulate.py          # full dry run, no AI, no browser
 ### The projector — one laptop, two windows
 
 The server machine is the screen. There is no display laptop and no hardware to wire up:
-`/screen` and `/admin` are just two windows of the same browser on the same machine, one
-on each display.
+`/screen` and `/admin` are two windows of the same browser, one per display.
 
-1. Connect the projector and set it to **Extend**, not Mirror.
-2. On the **projector** display: `http://localhost:8000/screen`, then **F11**.
-3. On the **laptop's own** display: `http://localhost:8000/admin?pin=1234`.
-4. Use `localhost`, not the LAN IP — the browser trusts it, so no certificate warning on
-   the machine that matters. The team laptops still use the LAN URL from the banner.
+1. **Connect the projector and extend.** System Settings → Displays → *Extend*, and arrange
+   the two screens so the projector sits beside the laptop, not on top of it. Leave
+   **Displays have separate Spaces** ticked (it is the default) — that is what keeps the
+   laptop screen usable while the projector is fullscreen.
+2. **Open the screen in its own window**, with no tabs and no address bar:
 
-The screen is read-only: it cannot submit anything and needs no PIN. It reconnects on its
-own and shows the current state rather than replaying the last verdict, so a reload
-mid-game is safe.
+   ```bash
+   open -na "Google Chrome" --args --app=http://localhost:8000/screen
+   ```
+
+   Any Chromium works — substitute `Thorium`, `Microsoft Edge`, `Brave` for the app name.
+   Drag the window to the projector, then **⌃⌘F** to fill the display. (On Windows it is
+   F11; on macOS F11 is *Show Desktop*, not fullscreen.)
+3. **Open the operator page** in a normal window on the laptop's own display:
+   `http://localhost:8000/admin?pin=1234`. Fullscreen it too if the laptop screen is small —
+   with separate Spaces both stay visible at once.
+4. Both use `localhost`, not the LAN IP: the browser trusts it, so no certificate warning
+   on the machine that matters. The team laptops still use the LAN URL from the banner.
+
+The screen window never needs focus: it is read-only, needs no PIN, and cannot submit
+anything. It reconnects on its own and shows the current state rather than replaying the
+last verdict, so a reload mid-game is safe. The operator's `A` / `L` shortcuts work while
+the admin window has focus, which it will, since that is the only window being clicked.
 
 What the room sees: whose turn it is, the instruction **as it is typed**, a 0.7 s
 processing beat, then a green `DITERIMA` flash or a red `DITOLAK` shake with the reason,

@@ -48,7 +48,7 @@ def banner(host: str, port: int, settings: config.Settings) -> str:
     lines = ["", "=" * 70, "  THE ENGINEER-BOT", "=" * 70]
     # The two pages that live on this machine use localhost, which the browser
     # trusts; the team laptops need the LAN address.
-    lines.append(row("Proyektor", f"{local}/screen     (F11 di layar proyektor)"))
+    lines.append(row("Proyektor", f"{local}/screen     (layar penuh di proyektor)"))
     lines.append(row("Operator", f"{local}/admin      (PIN {settings.admin_pin})"))
     lines.append(row("Tim A", f"{lan}/team/a"))
     lines.append(row("Tim B", f"{lan}/team/b"))
