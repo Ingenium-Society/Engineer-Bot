@@ -10,9 +10,15 @@ from pydantic import BaseModel, Field, field_validator
 from . import config
 
 Status = Literal["ACCEPT", "REJECT"]
-Phase = Literal["IDLE", "TYPING", "JUDGING", "LOCKED", "DONE"]
+#: WAITING is the team whose turn it is not.
+Phase = Literal["IDLE", "WAITING", "TYPING", "JUDGING", "LOCKED", "DONE"]
 JudgeMode = Literal["ai", "keyword", "manual"]
+#: Where the *translation* came from.
 Source = Literal["ai", "keyword", "manual"]
+#: How the instruction reached the server. Independent of the translator.
+InputSource = Literal["keyboard", "voice", "operator", "timeout"]
+SttMode = Literal["browser", "server", "off"]
+SttStatus = Literal["ok", "no-mic", "denied", "offline", "unsupported"]
 
 
 class Verb(StrEnum):
@@ -142,6 +148,10 @@ class TeamView(BaseModel):
     winner: str | None = None
     round_over: bool = False
     paused: bool = False
+    turn: str | None = None
+    stt_mode: SttMode = "browser"
+    stt_lang: str = "id-ID"
+    auto_submit_ms: int = 2000
 
 
 class AdminTeamView(TeamView):
@@ -153,6 +163,10 @@ class AdminTeamView(TeamView):
     ai_latency_ms: float | None = None
     fallback_used: bool = False
     locked_seconds: float = 0.0
-    device: str = "mock"
-    device_port: str = ""
     pending_text: str | None = None
+    stt_status: SttStatus | None = None
+    stt_engine: str | None = None
+    last_raw: str | None = None
+    stt_ms: float | None = None
+    input_source: InputSource | None = None
+    draft: str = ""

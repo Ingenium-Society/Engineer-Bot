@@ -82,6 +82,10 @@
       form: $('#answer-form'),
       input: $('#answer'),
       send: $('#send'),
+      mic: $('#mic'),
+      voice: $('#voice'),
+      voiceLine: $('#voice-line'),
+      voiceBar: $('#voice-bar'),
       hint: $('#hint'),
       history: $('#history'),
       round: $('#round-clock'),
@@ -90,6 +94,7 @@
       bannerText: $('#banner-text'),
       tts: $('#tts')
     };
+    var voiceBarWrap = els.voiceBar.parentNode;
 
     els.name.textContent = teamId === 'a' ? 'TIM A' : 'TIM B';
     document.title = els.name.textContent + ' · The Engineer-Bot';
@@ -113,16 +118,242 @@
       window.speechSynthesis.speak(utterance);
     }
 
+    /* ---- voice input: push-to-talk only, never always-on ---- */
+
+    var voice = {
+      mode: 'off',
+      ready: false,
+      engine: null,
+      usable: false,
+      status: 'ok',
+      listening: false,
+      raw: '',
+      sttMs: null,
+      timer: null,
+      delayMs: 2000
+    };
+
+    function canSubmit() {
+      return !!state && state.phase === 'TYPING' && !state.round_over && !state.paused;
+    }
+
+    function reportStt(status) {
+      voice.status = status;
+      voice.usable = !!voice.engine && status === 'ok';
+      if (link) {
+        link.send({
+          type: 'stt_status',
+          status: status,
+          engine: voice.engine ? voice.engine.engine : null
+        });
+      }
+    }
+
+    function voiceLine(text, options) {
+      options = options || {};
+      els.voice.hidden = false;
+      els.voiceLine.className = 'voice-line' + (options.tone ? ' ' + options.tone : '');
+      els.voiceLine.textContent = '';
+      els.voiceLine.appendChild(document.createTextNode(text));
+      if (options.label && options.action) {
+        var again = document.createElement('button');
+        again.type = 'button';
+        again.className = 'link';
+        again.textContent = options.label;
+        again.addEventListener('click', options.action);
+        els.voiceLine.appendChild(document.createTextNode(' · '));
+        els.voiceLine.appendChild(again);
+      }
+      voiceBarWrap.hidden = !options.bar;
+      if (!options.bar) els.voiceBar.style.width = '100%';
+    }
+
+    function hideVoice() {
+      els.voice.hidden = true;
+      els.voiceLine.textContent = '';
+      voiceBarWrap.hidden = true;
+    }
+
+    function clearCountdown() {
+      if (voice.timer) {
+        clearInterval(voice.timer);
+        voice.timer = null;
+      }
+      voiceBarWrap.hidden = true;
+      els.voiceBar.style.width = '100%';
+    }
+
+    /* Fill the box, show what was heard, and count down to sending it. */
+    function startCountdown() {
+      var delay = Math.max(500, voice.delayMs || 2000);
+      var deadline = Date.now() + delay;
+      clearCountdown();
+      els.voice.hidden = false;
+      els.voiceLine.className = 'voice-line live';
+      els.voiceLine.textContent = '';
+      els.voiceLine.appendChild(
+        document.createTextNode('Kamu bilang: "' + voice.raw + '" · Terkirim dalam ')
+      );
+      var seconds = document.createElement('span');
+      seconds.textContent = String(Math.ceil(delay / 1000));
+      els.voiceLine.appendChild(seconds);
+      els.voiceLine.appendChild(document.createTextNode(' detik · '));
+      var again = document.createElement('button');
+      again.type = 'button';
+      again.className = 'link';
+      again.textContent = 'Ulangi';
+      again.addEventListener('click', startListening);
+      els.voiceLine.appendChild(again);
+      voiceBarWrap.hidden = false;
+
+      var tick = function () {
+        var left = Math.max(0, deadline - Date.now());
+        seconds.textContent = String(Math.ceil(left / 1000));
+        els.voiceBar.style.width = Math.round((left / delay) * 100) + '%';
+        if (left <= 0) {
+          clearCountdown();
+          submitVoice();
+        }
+      };
+      tick();
+      voice.timer = setInterval(tick, 100);
+    }
+
+    function submitVoice() {
+      var text = els.input.value.trim();
+      if (!text || !canSubmit()) return;
+      var payload = { type: 'submit', text: text, source: 'voice' };
+      if (voice.raw) payload.raw = voice.raw;
+      if (voice.sttMs !== null && voice.sttMs !== undefined) payload.stt_ms = voice.sttMs;
+      link.send(payload);
+      pushDraft('');
+      clearCountdown();
+      hideVoice();
+      els.input.value = '';
+      els.input.disabled = true;
+      els.send.disabled = true;
+      els.status.textContent = 'Memproses...';
+      els.status.className = 'status-line';
+    }
+
+    function startListening() {
+      if (!voice.usable || !voice.engine || voice.listening || !canSubmit()) return;
+      clearCountdown();
+      // Never listen while the robot is speaking.
+      if (window.speechSynthesis && window.speechSynthesis.speaking) {
+        window.speechSynthesis.cancel();
+      }
+      els.mic.classList.add('listening');
+      voiceLine('Mendengarkan...', { tone: 'live' });
+      voice.engine.start();
+    }
+
+    function stopListening() {
+      voice.listening = false;
+      els.mic.classList.remove('listening');
+      if (voice.engine) voice.engine.abort();
+    }
+
+    function toggleListening() {
+      if (voice.listening) {
+        stopListening();
+        hideVoice();
+        return;
+      }
+      startListening();
+    }
+
+    function setupVoice(view) {
+      voice.delayMs = view.auto_submit_ms || 2000;
+      var mode = view.stt_mode || 'off';
+      if (mode === voice.mode && voice.ready) return;
+      voice.mode = mode;
+      voice.ready = true;
+
+      if (mode === 'off') {
+        els.mic.hidden = true;
+        voice.usable = false;
+        hideVoice();
+        return;
+      }
+      els.mic.hidden = false;
+
+      if (!voice.engine && window.EngineerBotVoice) {
+        voice.engine = window.EngineerBotVoice.create(mode, {
+          lang: view.stt_lang || 'id-ID',
+          team: teamId,
+          onStart: function () {
+            voice.listening = true;
+            els.mic.classList.add('listening');
+          },
+          onInterim: function (text) {
+            voiceLine('Mendengarkan... ' + text, { tone: 'live' });
+          },
+          onFinal: function (text, ms) {
+            voice.listening = false;
+            els.mic.classList.remove('listening');
+            if (!canSubmit()) {
+              hideVoice();
+              return;
+            }
+            voice.raw = text;
+            voice.sttMs = ms;
+            els.input.value = text;
+            pushDraft(text);
+            els.input.focus();
+            startCountdown();
+          },
+          onEmpty: function () {
+            voice.listening = false;
+            els.mic.classList.remove('listening');
+            voiceLine('Tidak terdengar. Coba lagi.', {
+              tone: 'error',
+              label: 'Ulangi',
+              action: startListening
+            });
+          },
+          onStatus: function (status) {
+            reportStt(status);
+          },
+          onError: function () {
+            voice.listening = false;
+            els.mic.classList.remove('listening');
+            voiceLine('Mikrofon tidak tersedia, silakan ketik', { tone: 'error' });
+          }
+        });
+      }
+
+      if (!voice.engine) {
+        voice.usable = false;
+        reportStt('unsupported');
+        voiceLine('Mikrofon tidak tersedia, silakan ketik', { tone: 'error' });
+        return;
+      }
+
+      // The engine exists, so the button works until the browser says otherwise.
+      // onStatus() downgrades this the moment permission or the network fails.
+      voice.usable = true;
+    }
+
+    function teamLabel(teamId) {
+      return teamId === 'a' ? 'Tim A' : 'Tim B';
+    }
+
     function statusFor(view) {
       if (view.round_over) {
         return view.winner === teamId ? 'Tim kami menang!' : 'Ronde selesai';
       }
       if (view.paused) return 'Ronde dijeda';
       if (view.phase === 'IDLE') return 'Menunggu ronde dimulai';
+      if (view.phase === 'WAITING') {
+        return view.turn ? 'Menunggu giliran ' + teamLabel(view.turn) : 'Menunggu giliran';
+      }
       if (view.phase === 'TYPING') {
         if (view.last && view.last.status === 'REJECT') return 'Ditolak ✘ ' + view.last.message;
         if (view.used >= view.max_players - 1) return 'Instruksi terakhir!';
-        return 'Giliranmu! Ketik satu instruksi';
+        return voice.usable
+          ? 'Giliranmu! Bicara atau ketik satu instruksi'
+          : 'Giliranmu! Ketik satu instruksi';
       }
       if (view.phase === 'JUDGING') return 'Memproses...';
       if (view.phase === 'LOCKED') {
@@ -170,6 +401,7 @@
     function render(view) {
       var wasTyping = state && state.phase === 'TYPING';
       state = view;
+      setupVoice(view);
 
       els.counter.textContent =
         'Pemain ' + view.player + ' dari ' + view.max_players +
@@ -189,6 +421,14 @@
       var editable = view.phase === 'TYPING' && !view.round_over && !view.paused;
       els.input.disabled = !editable;
       els.send.disabled = !editable;
+      els.mic.hidden = voice.mode === 'off' || !voice.engine;
+      els.mic.disabled = !editable || !voice.usable;
+      // The turn ended (or was paused): the microphone must close immediately.
+      if (!editable && voice.listening) {
+        stopListening();
+        hideVoice();
+      }
+      if (!editable) clearCountdown();
       if (editable && !wasTyping) {
         els.input.focus();
       }
@@ -209,14 +449,55 @@
 
     els.form.addEventListener('submit', function (event) {
       event.preventDefault();
+      clearCountdown();
+      hideVoice();
+      if (voice.listening) stopListening();
       var text = els.input.value.trim();
       if (!text || !state || state.phase !== 'TYPING') return;
       link.send({ type: 'submit', text: text });
+      pushDraft('');
       els.input.value = '';
       els.input.disabled = true;
       els.send.disabled = true;
       els.status.textContent = 'Memproses...';
       els.status.className = 'status-line';
+    });
+
+    els.mic.addEventListener('click', toggleListening);
+
+    // The projector mirrors what the team is typing, so the room can read along.
+    var draftTimer = null;
+    var draftPending = '';
+
+    function pushDraft(text) {
+      draftPending = text || '';
+      if (draftTimer) return;
+      draftTimer = setTimeout(function () {
+        draftTimer = null;
+        link.send({ type: 'draft', text: draftPending });
+      }, 120);
+    }
+
+    // Typing cancels the auto-submit so the player can fix a mishearing.
+    els.input.addEventListener('input', function () {
+      pushDraft(els.input.value);
+      if (voice.timer) {
+        clearCountdown();
+        hideVoice();
+      }
+    });
+
+    // Space starts listening whenever the text box does not have focus.
+    document.addEventListener('keydown', function (event) {
+      if (event.code !== 'Space' && event.key !== ' ') return;
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      var active = document.activeElement;
+      if (active === els.input) return;
+      var tag = active && active.tagName ? active.tagName.toLowerCase() : '';
+      if (tag === 'input' || tag === 'textarea') return;
+      if (!canSubmit() || !voice.usable) return;
+      event.preventDefault();
+      startListening();
     });
 
     var link = connect('/ws/team/' + teamId, render);
@@ -241,8 +522,8 @@
       ai: $('#f-ai'),
       model: $('#f-model'),
       latency: $('#f-latency'),
-      devA: $('#f-dev-a'),
-      devB: $('#f-dev-b'),
+      turn: $('#f-turn'),
+      chip: $('#turn-chip'),
       keyA: $('#key-a'),
       keyB: $('#key-b')
     };
@@ -266,6 +547,11 @@
           '<span>Instruksi <b data-role="used">-</b></span>' +
           '<span>Milestone <b data-role="milestones">-</b>/' + MILESTONES + '</span>' +
         '</div>' +
+        '<div class="stat-row stt-row">' +
+          '<span>Suara <b data-role="stt">-</b></span>' +
+          '<span>Mesin <b data-role="engine">-</b></span>' +
+          '<span>Dengar <b data-role="raw">-</b></span>' +
+        '</div>' +
         '<div class="last-box">' +
           '<div class="cmd" data-role="last-text">Belum ada instruksi.</div>' +
           '<div class="meta" data-role="last-meta"></div>' +
@@ -277,6 +563,11 @@
         '<div class="force-row">' +
           '<button data-action="force-accept">Paksa terima</button>' +
           '<button data-action="force-reject">Paksa tolak</button>' +
+        '</div>' +
+        '<div class="operator-row">' +
+          '<input class="operator-input" data-role="operator" maxlength="80" ' +
+          'placeholder="Ketik untuk pemain" autocomplete="off" spellcheck="false">' +
+          '<button data-action="operator-send">Kirim</button>' +
         '</div>';
       return section;
     }
@@ -319,6 +610,17 @@
       root.querySelector('[data-action="force-accept"]').disabled = !pending;
       root.querySelector('[data-action="force-reject"]').disabled = !pending;
 
+      var stt = team.stt_status || '-';
+      if (team.stt_ms != null) stt += ' · ' + Math.round(team.stt_ms) + ' ms';
+      setText(root, 'stt', stt);
+      setText(root, 'engine', team.stt_engine || '-');
+      setText(root, 'raw', team.last_raw ? '"' + team.last_raw + '"' : '-');
+
+      var operatorInput = root.querySelector('[data-role="operator"]');
+      var canType = team.phase === 'TYPING' && !team.round_over;
+      operatorInput.disabled = !canType;
+      root.querySelector('[data-action="operator-send"]').disabled = !canType;
+
       var last = team.last;
       setText(root, 'last-text', last ? last.text || '(kosong)' : 'Belum ada instruksi.');
       var meta = [];
@@ -352,12 +654,12 @@
           Math.round(latency) + ' ms' + (fallback ? ' (fallback)' : '')
         : '<span class="dot"></span>-';
 
-      [['a', els.devA], ['b', els.devB]].forEach(function (pair) {
-        var team = view.teams[pair[0]];
-        var dotClass = team.device === 'connected' ? 'ok' : (team.device === 'error' ? 'bad' : 'warn');
-        pair[1].innerHTML = '<span class="dot ' + dotClass + '"></span>' + team.device +
-          (team.device_port ? ' ' + team.device_port : '');
-      });
+      var turnLabel = view.turn === 'a' ? 'Tim A' : (view.turn === 'b' ? 'Tim B' : '-');
+      els.turn.textContent = turnLabel;
+      els.chip.textContent = view.round_over
+        ? 'SELESAI'
+        : (view.turn ? 'GILIRAN ' + turnLabel.toUpperCase() : 'SIAP');
+      els.chip.className = 'turn-chip' + (view.turn && !view.round_over ? ' active' : '');
 
       els.start.disabled = view.started && !view.round_over;
       els.pause.disabled = !view.started || view.paused || view.round_over;
@@ -373,6 +675,25 @@
       if (action === 'redo') link.send({ type: 'redo', team: team });
       if (action === 'force-accept') link.send({ type: 'force', team: team, decision: 'accept' });
       if (action === 'force-reject') link.send({ type: 'force', team: team, decision: 'reject' });
+      if (action === 'operator-send') {
+        var input = button.closest('[data-team]').querySelector('[data-role="operator"]');
+        var text = input.value.trim();
+        if (!text) return;
+        link.send({ type: 'operator_submit', team: team, text: text });
+        input.value = '';
+      }
+    });
+
+    els.columns.addEventListener('keydown', function (event) {
+      if (event.key !== 'Enter') return;
+      var input = event.target.closest ? event.target.closest('[data-role="operator"]') : null;
+      if (!input) return;
+      event.preventDefault();
+      var team = input.closest('[data-team]').dataset.team;
+      var text = input.value.trim();
+      if (!text) return;
+      link.send({ type: 'operator_submit', team: team, text: text });
+      input.value = '';
     });
 
     els.modeSwitch.addEventListener('click', function (event) {
@@ -412,48 +733,209 @@
 
   /* ---------------------------------------------------------------- screen */
 
+  /* The projector runs on the server laptop. It is the room's only view of the
+   * game, so it shows the instruction as it is typed, holds a processing beat,
+   * then plays one verdict. `seq` is what makes "one verdict" reliable: a
+   * replayed state never animates twice. */
   function initScreen() {
-    var container = $('#teams');
-    var clock = $('#round-clock');
-    var winner = $('#winner');
+    var MIN_PROCESSING_MS = 700;
+    var VERDICT_HOLD_MS = 1900;
 
-    TEAM_IDS.forEach(function (teamId) {
-      var card = document.createElement('section');
-      card.className = 'screen-team';
-      card.dataset.team = teamId;
-      card.innerHTML =
-        '<h2>' + (teamId === 'a' ? 'TIM A' : 'TIM B') + '</h2>' +
-        '<div class="big" data-role="progress">0/7</div>' +
-        '<div class="progress"><span data-role="bar"></span></div>' +
-        '<div class="sub" data-role="left">14 instruksi tersisa</div>' +
-        '<div class="msg" data-role="msg"></div>';
-      container.appendChild(card);
-    });
+    var els = {
+      clock: $('#round-clock'),
+      chip: $('#turn-chip'),
+      stage: $('#stage'),
+      turn: $('#stage-turn'),
+      stageClock: $('#stage-clock'),
+      text: $('#stage-text'),
+      foot: $('#stage-foot'),
+      overlay: $('#overlay'),
+      overlayTitle: $('#overlay-title'),
+      overlaySub: $('#overlay-sub')
+    };
 
-    function render(view) {
-      clock.textContent = fmtClock(view.round_seconds_left);
+    var view = null;
+    var shownSeq = -1;
+    var processingAt = 0;
+    var verdictUntil = 0;
+    var holdTimer = null;
+    var milestones = { a: -1, b: -1 };
+
+    function label(teamId) {
+      return teamId === 'b' ? 'TIM B' : 'TIM A';
+    }
+
+    function setStage(modifier, turnText, clockText, bodyText, footText, footTone) {
+      els.stage.className = 'stage' + (modifier ? ' stage--' + modifier : '');
+      els.turn.textContent = turnText;
+      els.stageClock.className = 'stage-clock';
+      els.stageClock.textContent = clockText;
+      els.text.textContent = bodyText;
+      els.text.className = 'stage-text' + (bodyText ? '' : ' empty');
+      els.foot.textContent = footText || '';
+      els.foot.className = 'stage-foot' + (footTone ? ' ' + footTone : '');
+    }
+
+    function paintTeams() {
       TEAM_IDS.forEach(function (teamId) {
         var team = view.teams[teamId];
-        var card = container.querySelector('[data-team="' + teamId + '"]');
-        card.querySelector('[data-role="progress"]').textContent =
-          team.milestones + '/' + MILESTONES;
-        card.querySelector('[data-role="bar"]').style.width =
-          Math.round((team.milestones / MILESTONES) * 100) + '%';
-        card.querySelector('[data-role="left"]').textContent =
-          team.remaining + ' instruksi tersisa';
-        var message = card.querySelector('[data-role="msg"]');
-        message.textContent = team.last ? team.last.message : '';
-        message.className = 'msg ' + (team.last ? team.last.status.toLowerCase() : '');
+        var panel = document.querySelector('.panel[data-team="' + teamId + '"]');
+        if (!panel) return;
+
+        panel.classList.toggle('on-turn', view.turn === teamId && !view.round_over);
+        panel.classList.toggle('finished', team.phase === 'DONE');
+        panel.querySelector('[data-role="left"]').textContent = String(team.remaining);
+
+        var pips = panel.querySelector('[data-role="pips"]');
+        if (!pips.children.length) {
+          for (var i = 0; i < MILESTONES; i += 1) {
+            var pip = document.createElement('span');
+            pip.className = 'pip';
+            pips.appendChild(pip);
+          }
+        }
+        Array.prototype.forEach.call(pips.children, function (pip, index) {
+          pip.className = 'pip' + (index < team.milestones ? ' on' : '');
+        });
+        // A milestone that just landed gets one pop, not a permanent animation.
+        if (milestones[teamId] >= 0 && team.milestones > milestones[teamId]) {
+          var fresh = pips.children[team.milestones - 1];
+          if (fresh) {
+            fresh.classList.add('pop');
+            setTimeout(function () {
+              fresh.classList.remove('pop');
+            }, 500);
+          }
+        }
+        milestones[teamId] = team.milestones;
+
+        var last = panel.querySelector('[data-role="last"]');
+        last.textContent = team.last ? team.last.message : '';
+        last.className = 'panel-last ' + (team.last ? team.last.status.toLowerCase() : '');
       });
+    }
+
+    function paintProcessing() {
+      setStage(
+        'processing',
+        view.turn ? 'GILIRAN ' + label(view.turn) : 'MEMPROSES',
+        '',
+        'MEMPROSES…',
+        'Robot sedang memeriksa instruksi',
+        ''
+      );
+    }
+
+    function paintTyping() {
+      var draft = (view.draft || '').trim();
+      var paused = view.paused;
+      setStage(
+        paused ? 'idle' : 'typing',
+        paused ? 'RONDE DIJEDA' : 'GILIRAN ' + label(view.turn),
+        view.turn_seconds_left > 0 ? String(Math.ceil(view.turn_seconds_left)) : '',
+        paused ? 'Ronde dijeda' : (draft || 'Menunggu instruksi…'),
+        paused ? 'Tekan Lanjut di halaman operator' : '',
+        ''
+      );
+      if (!paused) {
+        els.stageClock.className = 'stage-clock' + (view.turn_seconds_left <= 5 ? ' urgent' : '');
+        els.text.className = 'stage-text' + (draft ? ' caret' : ' empty');
+      }
+    }
+
+    function showVerdict(last) {
+      shownSeq = last.seq;
+      processingAt = 0;
+      verdictUntil = Date.now() + VERDICT_HOLD_MS;
+
+      var accepted = last.status === 'ACCEPT';
+      setStage(
+        accepted ? 'accept' : 'reject',
+        label(last.team) + ' · ' + (accepted ? 'DITERIMA' : 'DITOLAK'),
+        '',
+        last.text || '(kosong)',
+        last.message,
+        accepted ? 'accept' : 'reject'
+      );
+
+      if (holdTimer) clearTimeout(holdTimer);
+      holdTimer = setTimeout(function () {
+        holdTimer = null;
+        if (view && !view.round_over && Date.now() >= verdictUntil) paint();
+      }, VERDICT_HOLD_MS + 40);
+    }
+
+    function paintOverlay() {
+      els.overlay.hidden = false;
+      els.overlayTitle.textContent = view.winner ? label(view.winner) : 'SERI';
+      if (view.winner) {
+        var team = view.teams[view.winner];
+        els.overlaySub.textContent =
+          team.used + ' instruksi · ' + team.milestones + '/' + MILESTONES + ' milestone';
+      } else {
+        els.overlaySub.textContent = 'Tidak ada pemenang mutlak.';
+      }
+    }
+
+    function paint() {
+      if (!view) return;
+
+      els.clock.textContent = fmtClock(view.round_seconds_left);
+      els.clock.className =
+        'board-clock' +
+        (view.round_seconds_left <= 30 && !view.round_over ? ' urgent' : '');
+
+      paintTeams();
 
       if (view.round_over) {
-        winner.hidden = false;
-        winner.textContent = view.winner
-          ? (view.winner === 'a' ? 'TIM A MENANG' : 'TIM B MENANG')
-          : 'SERI';
-      } else {
-        winner.hidden = true;
+        els.chip.textContent = 'SELESAI';
+        els.chip.className = 'turn-chip';
+        paintOverlay();
+        return;
       }
+      els.overlay.hidden = true;
+
+      els.chip.textContent = view.turn ? 'GILIRAN ' + label(view.turn) : 'SIAP';
+      els.chip.className = 'turn-chip' + (view.turn ? ' active' : '');
+
+      var now = Date.now();
+      if (now < verdictUntil) return; // the verdict is still on screen
+
+      if (!view.started) {
+        setStage('idle', 'MENUNGGU RONDE', '', 'Tekan Mulai di halaman operator.', '', '');
+        return;
+      }
+
+      // A verdict nobody has seen yet beats everything else. A rejected turn
+      // stays in JUDGING for the hold, so this must come before the check below.
+      if (view.last && view.last.seq > shownSeq) {
+        var waited = processingAt ? now - processingAt : MIN_PROCESSING_MS;
+        if (waited < MIN_PROCESSING_MS) {
+          if (!processingAt) processingAt = now;
+          paintProcessing();
+          setTimeout(paint, MIN_PROCESSING_MS - waited + 20);
+          return;
+        }
+        showVerdict(view.last);
+        return;
+      }
+
+      if (view.turn_phase === 'JUDGING') {
+        if (!processingAt) processingAt = now;
+        paintProcessing();
+        return;
+      }
+      processingAt = 0;
+      paintTyping();
+    }
+
+    function render(next) {
+      var first = view === null;
+      view = next;
+      // A projector that reloads mid-game shows the current state, it does not
+      // replay the last verdict.
+      if (first) shownSeq = view.last ? view.last.seq : -1;
+      paint();
     }
 
     connect('/ws/screen', render);

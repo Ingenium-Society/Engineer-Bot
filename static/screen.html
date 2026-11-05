@@ -7,14 +7,56 @@
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body data-page="screen">
-<div class="screen">
-  <header class="screen-head">
-    <h1 class="screen-title">The Engineer-Bot</h1>
-    <div class="screen-clock" id="round-clock">05:30</div>
+<div class="board">
+  <header class="board-head">
+    <div class="board-brand">
+      <span class="board-title">THE ENGINEER-BOT</span>
+      <span class="board-sub">From Ideation, Into Creations</span>
+    </div>
+    <div class="board-clock" id="round-clock">05:30</div>
+    <div class="turn-chip" id="turn-chip">SIAP</div>
   </header>
-  <div class="screen-teams" id="teams"></div>
-  <div class="winner-banner" id="winner" hidden></div>
+
+  <section class="board-teams">
+    <article class="panel" data-team="a">
+      <div class="panel-top">
+        <span class="panel-name">TIM A</span>
+        <span class="panel-count"><b data-role="left">14</b> sisa</span>
+      </div>
+      <div class="pips" data-role="pips"></div>
+      <div class="panel-last" data-role="last"></div>
+    </article>
+    <article class="panel" data-team="b">
+      <div class="panel-top">
+        <span class="panel-name">TIM B</span>
+        <span class="panel-count"><b data-role="left">14</b> sisa</span>
+      </div>
+      <div class="pips" data-role="pips"></div>
+      <div class="panel-last" data-role="last"></div>
+    </article>
+  </section>
+
+  <section class="stage stage--idle" id="stage">
+    <div class="stage-head">
+      <span class="stage-turn" id="stage-turn">MENUNGGU RONDE</span>
+      <span class="stage-clock" id="stage-clock"></span>
+    </div>
+    <div class="stage-body">
+      <div class="stage-text" id="stage-text">Tekan Mulai di halaman operator.</div>
+    </div>
+    <div class="stage-foot" id="stage-foot"></div>
+    <div class="stage-scan" aria-hidden="true"></div>
+  </section>
 </div>
+
+<div class="overlay" id="overlay" hidden>
+  <div class="overlay-inner">
+    <div class="overlay-kicker">RONDE SELESAI</div>
+    <div class="overlay-title" id="overlay-title"></div>
+    <div class="overlay-sub" id="overlay-sub"></div>
+  </div>
+</div>
+
 <script src="/static/app.js"></script>
 </body>
 </html>

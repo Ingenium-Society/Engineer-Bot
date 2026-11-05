@@ -3,11 +3,15 @@
 One :class:`Game` owns two :class:`TeamState` objects. Everything time-related
 is read from an injectable monotonic clock so tests never sleep.
 
+Play is **turn based**: team A starts, then B, then A again. Only the team whose
+turn it is can type, and only that team has a running 20 s clock. Everything
+else waits in ``WAITING``.
+
 Phase machine per team::
 
-    IDLE -> TYPING -> JUDGING -> LOCKED -> (operator) -> TYPING
-                            \\-> (rejected) -> TYPING after a short hold
-                                              -> DONE when the budget is spent
+    IDLE -> WAITING -> TYPING -> JUDGING -> LOCKED -> (operator) -> WAITING
+                        \\-> (rejected) -> WAITING after a short hold
+                                          -> DONE when the budget is spent
 """
 
 from __future__ import annotations
@@ -22,16 +26,17 @@ from pathlib import Path
 from typing import Any
 
 from . import config, judge
-from .device import Device, MockDevice, format_line
 from .logbook import write_round
 from .models import (
     AdminTeamView,
     Command,
     HistoryEntry,
+    InputSource,
     JudgeMode,
     JudgeResult,
     Phase,
     Source,
+    SttStatus,
     TeamView,
     TranslationResult,
     WorldState,
@@ -55,6 +60,11 @@ class Submission:
     status: str
     message: str
     latency_ms: float | None
+    input_source: InputSource = "keyboard"
+    raw: str | None = None
+    stt_ms: float | None = None
+    engine: str | None = None
+    stt_status: str | None = None
 
 
 @dataclass
@@ -71,7 +81,6 @@ class Pending:
 @dataclass
 class TeamState:
     id: str
-    device: Device
     phase: Phase = "IDLE"
     used: int = 0
     state: WorldState = field(default_factory=WorldState)
@@ -92,6 +101,13 @@ class TeamState:
     pending: Pending | None = None
     forced: str | None = None
     generation: int = 0
+    input_source: InputSource | None = None
+    last_raw: str | None = None
+    stt_ms: float | None = None
+    stt_status: SttStatus | None = None
+    stt_engine: str | None = None
+    #: Live text on the team's page, mirrored to the projector while they type.
+    draft: str = ""
 
     @property
     def label(self) -> str:
@@ -109,7 +125,6 @@ class Game:
         settings: config.Settings,
         *,
         ai: Any = None,
-        devices: dict[str, Device] | None = None,
         notify: Callable[[], Awaitable[None]] | None = None,
         clock: Callable[[], float] = time.monotonic,
         log_dir: Path | str | None = None,
@@ -121,21 +136,21 @@ class Game:
         self.notify = notify
         self.log_dir = Path(log_dir) if log_dir else config.PROJECT_ROOT / "logs"
 
-        devices = devices or {}
-        self.teams: dict[str, TeamState] = {
-            team_id: TeamState(id=team_id, device=devices[team_id])
-            for team_id in TEAM_IDS
-            if team_id in devices
-        }
-        for team_id in TEAM_IDS:
-            if team_id not in self.teams:
-                self.teams[team_id] = TeamState(id=team_id, device=MockDevice(f"{team_id}-mock"))
+        self.teams: dict[str, TeamState] = {team_id: TeamState(id=team_id) for team_id in TEAM_IDS}
 
         self.started = False
         self.paused = False
         self.round_over = False
         self.winner: str | None = None
         self.finished_at: float | None = None
+        #: Whose turn it is. Turn based play starts with team A.
+        self.turn: str | None = None
+        #: Bumped once per judged instruction so the projector can animate
+        #: exactly one verdict instead of re-playing the current state.
+        self.seq = 0
+        #: The most recent verdict, with the team that produced it. Kept apart
+        #: from `turn`, because a rejection hands the floor over immediately.
+        self.last_event: dict[str, Any] | None = None
         self._round_deadline = 0.0
         self._pause_started = 0.0
         self._running = asyncio.Event()
@@ -173,6 +188,8 @@ class Game:
         self.round_over = False
         self.winner = None
         self.finished_at = None
+        self.seq = 0
+        self.last_event = None
         self._round_deadline = now + self.settings.play_seconds
         for team in self.teams.values():
             team.generation += 1
@@ -191,9 +208,17 @@ class Game:
             team.pending_text = None
             team.pending = None
             team.forced = None
-            team.phase = "TYPING"
-            team.turn_deadline = now + self.settings.turn_seconds
-            await team.device.send(format_line("RESET"))
+            team.input_source = None
+            team.last_raw = None
+            team.stt_ms = None
+            team.draft = ""
+            team.phase = "WAITING"
+            team.turn_deadline = 0.0
+        # Team A always opens the round.
+        self.turn = "a"
+        opener = self.teams["a"]
+        opener.phase = "TYPING"
+        opener.turn_deadline = now + self.settings.turn_seconds
         await self._notify()
 
     async def reset(self) -> None:
@@ -203,6 +228,9 @@ class Game:
         self.round_over = False
         self.winner = None
         self.finished_at = None
+        self.turn = None
+        self.seq = 0
+        self.last_event = None
         self._round_deadline = 0.0
         for team in self.teams.values():
             team.generation += 1
@@ -219,7 +247,10 @@ class Game:
             team.locked_since = None
             team.pending_text = None
             team.forced = None
-            await team.device.send(format_line("RESET"))
+            team.input_source = None
+            team.last_raw = None
+            team.stt_ms = None
+            team.draft = ""
         await self._notify()
 
     async def pause(self) -> None:
@@ -276,6 +307,7 @@ class Game:
         team.last = entry
         team.source = None
         team.command = None
+        team.draft = ""
         team.records.append(
             Submission(
                 at=datetime.now().isoformat(timespec="seconds"),
@@ -286,27 +318,47 @@ class Game:
                 status="REJECT",
                 message=config.MSG_TIMEOUT,
                 latency_ms=None,
+                input_source="timeout",
             )
         )
-        await team.device.send(format_line("REJECT", config.MSG_TIMEOUT))
-        await self._begin_turn(team)
+        self.seq += 1
+        self.last_event = {
+            "seq": self.seq,
+            "team": team.id,
+            "text": "",
+            "status": "REJECT",
+            "message": config.MSG_TIMEOUT,
+        }
+        await self._advance_turn(team)
 
     # -- turn flow ---------------------------------------------------------
 
-    async def submit(self, team_id: str, text: str) -> None:
+    async def submit(
+        self,
+        team_id: str,
+        text: str,
+        *,
+        source: InputSource = "keyboard",
+        raw: str | None = None,
+        stt_ms: float | None = None,
+    ) -> None:
+        """The single door into the judge. Voice and keyboard share it exactly.
+
+        Only the team whose turn it is may use it; the other team is WAITING.
+        """
         team = self.teams.get(team_id)
         if team is None:
             return
         if not self.started or self.round_over or self.paused:
             return
-        if team.phase != "TYPING":
+        if self.turn != team_id or team.phase != "TYPING":
             return
         now = self.clock()
         if now - team.last_submit_at < config.SUBMIT_RATE_LIMIT_SECONDS:
             return
         async with team.lock:
             # Re-check inside the lock: two quick submissions must not both run.
-            if team.phase != "TYPING" or self.round_over:
+            if team.phase != "TYPING" or self.round_over or self.turn != team_id:
                 return
             now = self.clock()
             if now - team.last_submit_at < config.SUBMIT_RATE_LIMIT_SECONDS:
@@ -317,10 +369,59 @@ class Game:
             team.used += 1
             team.phase = "JUDGING"
             team.pending_text = text
+            team.input_source = source
+            team.last_raw = raw
+            team.stt_ms = stt_ms
             await self._notify()
-            await self._judge_and_apply(team, text, generation)
+            await self._judge_and_apply(team, text, generation, source, raw, stt_ms)
 
-    async def _judge_and_apply(self, team: TeamState, text: str, generation: int) -> None:
+    async def set_draft(self, team_id: str, text: str) -> None:
+        """Mirror the team's live typing to the projector.
+
+        Only the team on turn, only while typing, and capped — this arrives on
+        every keystroke, so it must stay cheap and must never leak into the judge.
+        """
+        team = self.teams.get(team_id)
+        if team is None or team.phase != "TYPING" or self.turn != team_id:
+            return
+        draft = " ".join((text or "").split())[: config.DRAFT_MAX]
+        if draft == team.draft:
+            return
+        team.draft = draft
+        await self._notify()
+
+    async def operator_submit(self, team_id: str, text: str) -> None:
+        """The operator types for a team whose microphone died.
+
+        Counts as that team's instruction, is logged with source "operator", and
+        is ignored outside that team's input phase (``submit`` enforces it).
+        """
+        team = self.teams.get(team_id)
+        if team is None or team.phase != "TYPING" or self.turn != team_id:
+            return
+        await self.submit(team_id, text, source="operator")
+
+    async def set_stt_status(self, team_id: str, status: str, engine: str | None = None) -> None:
+        """Remember what the team page's microphone is doing, for the admin page."""
+        team = self.teams.get(team_id)
+        if team is None or status not in config.STT_STATUSES:
+            return
+        if team.stt_status == status and (engine is None or team.stt_engine == engine):
+            return
+        team.stt_status = status  # type: ignore[assignment]
+        if engine:
+            team.stt_engine = engine
+        await self._notify()
+
+    async def _judge_and_apply(
+        self,
+        team: TeamState,
+        text: str,
+        generation: int,
+        source: InputSource = "keyboard",
+        raw: str | None = None,
+        stt_ms: float | None = None,
+    ) -> None:
         clean, error = judge.sanitize(text)
         translation: TranslationResult | None = None
 
@@ -363,7 +464,7 @@ class Game:
 
         if team.generation != generation:
             return
-        await self._apply(team, result, text, translation, generation)
+        await self._apply(team, result, text, translation, generation, source, raw, stt_ms)
 
     async def _await_operator(
         self,
@@ -389,6 +490,9 @@ class Game:
         text: str,
         translation: TranslationResult | None,
         generation: int,
+        source: InputSource = "keyboard",
+        raw: str | None = None,
+        stt_ms: float | None = None,
     ) -> None:
         if team.generation != generation:
             return
@@ -414,6 +518,15 @@ class Game:
         )
         team.history.append(entry)
         team.last = entry
+        team.draft = ""
+        self.seq += 1
+        self.last_event = {
+            "seq": self.seq,
+            "team": team.id,
+            "text": text,
+            "status": result.status,
+            "message": result.message,
+        }
         team.records.append(
             Submission(
                 at=datetime.now().isoformat(timespec="seconds"),
@@ -424,6 +537,11 @@ class Game:
                 status=result.status,
                 message=result.message,
                 latency_ms=team.latency_ms,
+                input_source=source,
+                raw=raw,
+                stt_ms=stt_ms,
+                engine=team.stt_engine,
+                stt_status=team.stt_status,
             )
         )
 
@@ -432,13 +550,11 @@ class Game:
             team.state = result.state
             team.phase = "LOCKED"
             team.locked_since = self.clock()
-            await team.device.send(format_line("ACCEPT", text))
             await self._notify()
             if team.state.finished:
                 await self._finish("win", winner=team.id)
             return
 
-        await team.device.send(format_line("REJECT", result.message))
         await self._notify()
         self._spawn(self._after_reject(team, generation))
 
@@ -447,25 +563,43 @@ class Game:
         await self._running.wait()  # a pause during the hold must not burn the next turn
         if team.generation != generation or self.round_over:
             return
-        await self._begin_turn(team)
+        await self._advance_turn(team)
 
-    async def _begin_turn(self, team: TeamState) -> None:
-        team.pending_text = None
-        team.locked_since = None
+    async def _advance_turn(self, current: TeamState) -> None:
+        """Close `current`'s turn and hand the floor to the other team.
+
+        A team that has spent its 14 instructions is DONE and is skipped; if both
+        are DONE the round ends. Nothing here touches the world state.
+        """
+        current.pending_text = None
+        current.locked_since = None
+        current.turn_deadline = 0.0
         if self.round_over:
-            team.phase = "DONE"
+            current.phase = "DONE"
             await self._notify()
             return
-        if team.used >= self.settings.max_instructions:
-            team.phase = "DONE"
-            team.turn_deadline = 0.0
-            await self._notify()
-            if all(t.phase == "DONE" for t in self.teams.values()):
-                await self._finish("exhausted")
+
+        if current.used >= self.settings.max_instructions:
+            current.phase = "DONE"
+        else:
+            current.phase = "WAITING"
+
+        if all(team.phase == "DONE" for team in self.teams.values()):
+            await self._finish("exhausted")
             return
-        team.phase = "TYPING"
-        team.turn_deadline = self.clock() + self.settings.turn_seconds
+
+        other = self.teams[self._other(current.id)]
+        if other.phase == "DONE":
+            # The other team is out of instructions: this one keeps playing.
+            other = current
+        self.turn = other.id
+        other.phase = "TYPING"
+        other.turn_deadline = self.clock() + self.settings.turn_seconds
         await self._notify()
+
+    @staticmethod
+    def _other(team_id: str) -> str:
+        return "b" if team_id == "a" else "a"
 
     # -- operator actions --------------------------------------------------
 
@@ -479,7 +613,7 @@ class Game:
             if team.state.finished:
                 await self._finish("win", winner=team.id)
                 return
-            await self._begin_turn(team)
+            await self._advance_turn(team)
 
     async def redo(self, team_id: str) -> None:
         team = self.teams.get(team_id)
@@ -490,7 +624,7 @@ class Game:
                 return
             if team.snapshot is not None:
                 team.state = team.snapshot.snapshot()
-            await self._begin_turn(team)
+            await self._advance_turn(team)
 
     async def force(self, team_id: str, decision: str, text: str | None = None) -> None:
         team = self.teams.get(team_id)
@@ -499,7 +633,7 @@ class Game:
         if team.pending is not None and not team.pending.event.is_set():
             self._resolve_pending(team, decision)
             return
-        if text and team.phase == "TYPING" and not self.round_over:
+        if text and team.phase == "TYPING" and self.turn == team_id and not self.round_over:
             team.forced = decision
             await self.submit(team_id, text)
 
@@ -522,15 +656,13 @@ class Game:
             return
         self.round_over = True
         self.finished_at = self.clock()
+        self.turn = None
         for team in self.teams.values():
             self._resolve_pending(team, "reject")
             team.pending = None
-            if team.phase in ("TYPING", "JUDGING", "LOCKED"):
-                team.phase = "DONE"
+            team.phase = "DONE"
             team.turn_deadline = 0.0
         self.winner = winner or self.decide_winner()
-        if self.winner:
-            await self.teams[self.winner].device.send(format_line("WIN"))
         self.last_log_path = write_round(self.log_dir, self.to_log(reason))
         await self._notify()
 
@@ -562,6 +694,10 @@ class Game:
             winner=self.winner,
             round_over=self.round_over,
             paused=self.paused,
+            turn=self.turn,
+            stt_mode=self.settings.stt_mode,  # type: ignore[arg-type]
+            stt_lang=self.settings.stt_lang,
+            auto_submit_ms=self.settings.auto_submit_delay_ms,
         )
 
     def admin_team_view(self, team_id: str) -> AdminTeamView:
@@ -582,9 +718,13 @@ class Game:
             ai_latency_ms=team.ai_latency_ms,
             fallback_used=team.fallback_used,
             locked_seconds=round(locked_seconds, 1),
-            device=team.device.status,
-            device_port=team.device.port,
             pending_text=team.pending.text if team.pending is not None else None,
+            stt_status=team.stt_status,
+            stt_engine=team.stt_engine,
+            last_raw=team.last_raw,
+            stt_ms=team.stt_ms,
+            input_source=team.input_source,
+            draft=team.draft,
         )
 
     def admin_view(self) -> dict[str, Any]:
@@ -594,6 +734,7 @@ class Game:
             "paused": self.paused,
             "round_over": self.round_over,
             "winner": self.winner,
+            "turn": self.turn,
             "judge_mode": self.judge_mode,
             "ai_available": bool(self.ai is not None and getattr(self.ai, "available", False)),
             "ai_model": self.settings.deepseek_model if self.ai is not None else None,
@@ -602,12 +743,22 @@ class Game:
         }
 
     def screen_view(self) -> dict[str, Any]:
+        """Everything the projector needs, including the live draft and the
+        sequence number that tells it a *new* verdict just happened."""
+        active = self.teams[self.turn] if self.turn else None
         return {
             "type": "screen_state",
+            "started": self.started,
             "round_over": self.round_over,
             "winner": self.winner,
             "paused": self.paused,
             "round_seconds_left": round(self._round_left(), 1),
+            "turn": self.turn,
+            "turn_phase": active.phase if active else "IDLE",
+            "turn_seconds_left": round(self._turn_left(active), 1) if active else 0.0,
+            "draft": active.draft if active else "",
+            "seq": self.seq,
+            "last": self.last_event,
             "teams": {
                 team_id: {
                     "label": self.teams[team_id].label,
@@ -663,6 +814,11 @@ class Game:
                             "latency_ms": (
                                 round(record.latency_ms, 1) if record.latency_ms else None
                             ),
+                            "input_source": record.input_source,
+                            "raw": record.raw,
+                            "stt_ms": round(record.stt_ms, 1) if record.stt_ms else None,
+                            "engine": record.engine,
+                            "stt_status": record.stt_status,
                         }
                         for record in team.records
                     ],

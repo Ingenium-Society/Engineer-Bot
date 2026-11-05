@@ -38,20 +38,30 @@ def lan_addresses() -> list[str]:
 
 def banner(host: str, port: int, settings: config.Settings) -> str:
     addresses = lan_addresses() if host in ("0.0.0.0", "") else [host]
+    scheme = settings.scheme
     lines = ["", "=" * 62, "  THE ENGINEER-BOT", "=" * 62]
     for address in addresses:
-        base = f"http://{address}:{port}"
+        base = f"{scheme}://{address}:{port}"
         lines += [
+            f"  Proyektor: {base}/screen",
             f"  Operator : {base}/admin     (PIN {settings.admin_pin})",
             f"  Tim A    : {base}/team/a",
             f"  Tim B    : {base}/team/b",
-            f"  Layar    : {base}/screen",
             "",
         ]
+    lines.append("  Buka /screen di laptop ini, tekan F11 untuk layar penuh.")
     if settings.deepseek_api_key:
         lines.append(f"  AI       : aktif ({settings.deepseek_model})")
     else:
         lines.append("  AI       : mati - memakai parser kata kunci")
+    if settings.stt_mode == "off":
+        lines.append("  Suara    : mati (STT_MODE=off)")
+    else:
+        lines.append(f"  Suara    : {settings.stt_mode} ({settings.stt_lang})")
+    if scheme == "https":
+        lines.append("  HTTPS    : aktif - pastikan sertifikat sudah dipercaya di laptop tim")
+    else:
+        lines.append("  HTTPS    : mati - mikrofon diblokir di http dari laptop lain")
     lines.append(f"  Batas    : {settings.max_instructions} instruksi / tim")
     lines.append("=" * 62)
     return "\n".join(lines)
@@ -65,7 +75,11 @@ def main() -> None:
 
     settings = config.Settings.from_env()
     print(banner(args.host, args.port, settings), flush=True)
-    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+
+    tls: dict[str, str] = {}
+    if settings.https_cert and settings.https_key:
+        tls = {"ssl_certfile": settings.https_cert, "ssl_keyfile": settings.https_key}
+    uvicorn.run(app, host=args.host, port=args.port, log_level="info", **tls)
 
 
 if __name__ == "__main__":

@@ -21,3 +21,6 @@ logs/*.json
 # Tool caches
 .pytest_cache/
 .ruff_cache/
+
+# Local TLS certificates
+certs/

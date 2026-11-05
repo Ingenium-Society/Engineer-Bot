@@ -6,16 +6,16 @@ import asyncio
 import logging
 import time
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import config
 from .ai_client import AIClient
-from .device import build_device
 from .game import TEAM_IDS, Game
+from .stt import SttError, SttService, build_transcriber
 
 log = logging.getLogger(__name__)
 
@@ -64,17 +64,14 @@ def create_app(settings: config.Settings | None = None) -> FastAPI:
     async def lifespan(app: FastAPI):
         ai = AIClient(settings)
         await ai.startup()
-        devices = {
-            "a": build_device(settings.serial_port_a, settings.serial_baud, "A"),
-            "b": build_device(settings.serial_port_b, settings.serial_baud, "B"),
-        }
         hub = Hub()
         game = Game(
             settings,
             ai=ai,
-            devices=devices,
             log_dir=config.PROJECT_ROOT / "logs",
         )
+        stt = SttService(build_transcriber(settings))
+        await stt.startup()
 
         async def notify() -> None:
             await hub.broadcast(game)
@@ -83,6 +80,7 @@ def create_app(settings: config.Settings | None = None) -> FastAPI:
         app.state.game = game
         app.state.hub = hub
         app.state.settings = settings
+        app.state.stt = stt
 
         async def ticker() -> None:
             last = 0.0
@@ -103,8 +101,7 @@ def create_app(settings: config.Settings | None = None) -> FastAPI:
         finally:
             task.cancel()
             await ai.aclose()
-            for device in devices.values():
-                await device.close()
+            await stt.close()
 
     app = FastAPI(title="The Engineer-Bot", lifespan=lifespan)
     if STATIC_DIR.exists():
@@ -174,6 +171,18 @@ def create_app(settings: config.Settings | None = None) -> FastAPI:
     async def healthz() -> dict[str, str]:
         return {"status": "ok"}
 
+    @app.post("/api/stt/{team_id}")
+    async def api_stt(team_id: str, audio: Annotated[UploadFile, File()]):
+        """Phase 2: a recorded clip in, a transcript out. Nothing is stored."""
+        if team_id not in TEAM_IDS:
+            return JSONResponse({"error": "Tim tidak dikenal."}, status_code=404)
+        data = await audio.read()
+        try:
+            text, ms = await app.state.stt.transcribe(data, audio.content_type)
+        except SttError as exc:
+            return JSONResponse({"error": exc.message}, status_code=exc.status_code)
+        return {"text": text, "ms": round(ms, 1)}
+
     # -- websockets ----------------------------------------------------
 
     @app.websocket("/ws/team/{team_id}")
@@ -189,8 +198,26 @@ def create_app(settings: config.Settings | None = None) -> FastAPI:
         try:
             while True:
                 message = await websocket.receive_json()
-                if message.get("type") == "submit":
-                    await game.submit(team_id, str(message.get("text", "")))
+                kind = message.get("type")
+                if kind == "submit":
+                    # A team page may only claim "voice" or "keyboard"; the
+                    # operator source is reserved for the admin socket.
+                    claimed = message.get("source")
+                    await game.submit(
+                        team_id,
+                        str(message.get("text", "")),
+                        source="voice" if claimed == "voice" else "keyboard",
+                        raw=_as_text(message.get("raw")),
+                        stt_ms=_as_float(message.get("stt_ms")),
+                    )
+                elif kind == "stt_status":
+                    await game.set_stt_status(
+                        team_id,
+                        str(message.get("status", "")),
+                        _as_text(message.get("engine")),
+                    )
+                elif kind == "draft":
+                    await game.set_draft(team_id, str(message.get("text", "")))
         except WebSocketDisconnect:
             pass
         except Exception:  # noqa: BLE001
@@ -253,10 +280,29 @@ async def _handle_admin(game: Game, message: dict[str, Any]) -> None:
         await game.done(team_id)
     elif kind == "redo" and team_id in TEAM_IDS:
         await game.redo(team_id)
+    elif kind == "operator_submit" and team_id in TEAM_IDS:
+        await game.operator_submit(team_id, str(message.get("text", "")))
     elif kind == "force" and team_id in TEAM_IDS:
         await game.force(team_id, str(message.get("decision", "")), message.get("text"))
     elif kind == "set_judge_mode" and message.get("mode") in ("ai", "keyword", "manual"):
         await game.set_judge_mode(message["mode"])
+
+
+def _as_text(value: Any) -> str | None:
+    return value if isinstance(value, str) and value else None
+
+
+def _as_float(value: Any) -> float | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int | float):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return None
+    return None
 
 
 app = create_app()

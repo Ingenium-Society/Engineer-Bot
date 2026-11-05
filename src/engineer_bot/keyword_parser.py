@@ -81,6 +81,10 @@ _VERB_PHRASES: list[tuple[str, Verb]] = [
 ]
 _VERB_PHRASES.sort(key=lambda item: len(item[0]), reverse=True)
 
+#: Longest phrase first so "belok ke kiri" wins over "kekiri".
+_FIXES = sorted(config.SPEECH_FIXES.items(), key=lambda item: len(item[0]), reverse=True)
+_FILLERS = set(config.SPEECH_FILLERS)
+
 #: Cheap guard against players trying to talk to the model instead of the robot.
 _INJECTION_MARKERS = (
     "abaikan",
@@ -96,10 +100,19 @@ _INJECTION_MARKERS = (
 
 
 def normalize(text: str) -> str:
-    """Lowercase, strip punctuation, collapse whitespace."""
+    """Lowercase, strip punctuation, repair known mishearings, drop fillers.
+
+    Speech engines return "eh, maju dua langka" with no punctuation and the odd
+    wrong word. The repairs here are the ones that cannot change meaning: they
+    never add a number, a direction or an object that was not spoken.
+    """
     lowered = text.lower()
     cleaned = re.sub(r"[^0-9a-z\u00c0-\u024f]+", " ", lowered)
-    return " ".join(cleaned.split())
+    cleaned = " ".join(cleaned.split())
+    for wrong, right in _FIXES:
+        cleaned = re.sub(rf"\b{re.escape(wrong)}\b", right, cleaned)
+    words = [word for word in cleaned.split() if word not in _FILLERS]
+    return " ".join(words)
 
 
 def _eval_number(sequence: list[str]) -> int:
@@ -193,7 +206,9 @@ def parse_keyword(text: str) -> Command:
     """Best-effort translation. Returns an INVALID command when unsure."""
     normalized = normalize(text)
     if not normalized:
-        return _invalid(config.MSG_EMPTY)
+        # Nothing left after stripping fillers: empty means truly empty, but
+        # "tolong dong" was speech we simply could not use.
+        return _invalid(config.MSG_EMPTY if not text.strip() else config.MSG_UNKNOWN_VERB)
 
     if any(marker in normalized for marker in _INJECTION_MARKERS):
         return _invalid(config.MSG_UNKNOWN_VERB)

@@ -8,13 +8,19 @@ dependencies = [
     "fastapi>=0.162.0",
     "httpx>=0.28.1",
     "pydantic>=2.14.2",
-    "pyserial>=3.5",
     "python-dotenv>=1.2.4",
+    "python-multipart>=0.0.33",
     "uvicorn[standard]>=0.54.0",
 ]
 
 [project.scripts]
 engineer-bot = "engineer_bot.__main__:main"
+
+[project.optional-dependencies]
+stt = [
+    "av<19",
+    "faster-whisper>=1.2.1",
+]
 
 [build-system]
 requires = ["hatchling"]
