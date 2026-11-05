@@ -39,33 +39,34 @@ def lan_addresses() -> list[str]:
 def banner(host: str, port: int, settings: config.Settings) -> str:
     addresses = lan_addresses() if host in ("0.0.0.0", "") else [host]
     scheme = settings.scheme
-    lines = ["", "=" * 62, "  THE ENGINEER-BOT", "=" * 62]
-    for address in addresses:
-        base = f"{scheme}://{address}:{port}"
-        lines += [
-            f"  Proyektor: {base}/screen      <- laptop ini, F11 di layar proyektor",
-            f"  Operator : {base}/admin       <- laptop ini, PIN {settings.admin_pin}",
-            f"  Tim A    : {base}/team/a",
-            f"  Tim B    : {base}/team/b",
-            "",
-        ]
+    lan = f"{scheme}://{addresses[0]}:{port}"
     local = f"{scheme}://localhost:{port}"
-    lines.append(f"  Di laptop ini: {local}/screen  dan  {local}/admin")
-    lines.append("  Total 3 laptop: server ini (proyektor + operator), Tim A, Tim B.")
+
+    def row(label: str, value: str) -> str:
+        return f"  {label:<9}: {value}"
+
+    lines = ["", "=" * 70, "  THE ENGINEER-BOT", "=" * 70]
+    # The two pages that live on this machine use localhost, which the browser
+    # trusts; the team laptops need the LAN address.
+    lines.append(row("Proyektor", f"{local}/screen     (F11 di layar proyektor)"))
+    lines.append(row("Operator", f"{local}/admin      (PIN {settings.admin_pin})"))
+    lines.append(row("Tim A", f"{lan}/team/a"))
+    lines.append(row("Tim B", f"{lan}/team/b"))
+    lines.append("")
     if settings.deepseek_api_key:
-        lines.append(f"  AI       : aktif ({settings.deepseek_model})")
+        lines.append(row("AI", f"aktif ({settings.deepseek_model})"))
     else:
-        lines.append("  AI       : mati - memakai parser kata kunci")
+        lines.append(row("AI", "mati - memakai parser kata kunci"))
     if settings.stt_mode == "off":
-        lines.append("  Suara    : mati (STT_MODE=off)")
+        lines.append(row("Suara", "mati (STT_MODE=off)"))
     else:
-        lines.append(f"  Suara    : {settings.stt_mode} ({settings.stt_lang})")
+        lines.append(row("Suara", f"{settings.stt_mode} ({settings.stt_lang})"))
     if scheme == "https":
-        lines.append("  HTTPS    : aktif - pastikan sertifikat sudah dipercaya di laptop tim")
+        lines.append(row("HTTPS", "aktif - percayakan sertifikat di laptop tim"))
     else:
-        lines.append("  HTTPS    : mati - mikrofon diblokir di http dari laptop lain")
-    lines.append(f"  Batas    : {settings.max_instructions} instruksi / tim")
-    lines.append("=" * 62)
+        lines.append(row("HTTPS", "mati - mikrofon diblokir di http dari laptop lain"))
+    lines.append(row("Batas", f"{settings.max_instructions} instruksi / tim"))
+    lines.append("=" * 70)
     return "\n".join(lines)
 
 

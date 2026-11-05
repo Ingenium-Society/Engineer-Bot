@@ -45,21 +45,19 @@ uv run uvicorn engineer_bot.main:app --host 0.0.0.0 --port 8000
 On startup the server prints every URL you need:
 
 ```
-==============================================================
+======================================================================
   THE ENGINEER-BOT
-==============================================================
-  Proyektor: https://192.168.1.24:8000/screen      <- laptop ini, F11 di layar proyektor
-  Operator : https://192.168.1.24:8000/admin       <- laptop ini, PIN 1234
-  Tim A    : https://192.168.1.24:8000/team/a
-  Tim B    : https://192.168.1.24:8000/team/b
+======================================================================
+  Proyektor: http://localhost:8000/screen     (F11 di layar proyektor)
+  Operator : http://localhost:8000/admin      (PIN 1234)
+  Tim A    : http://192.168.1.24:8000/team/a
+  Tim B    : http://192.168.1.24:8000/team/b
 
-  Di laptop ini: https://localhost:8000/screen  dan  https://localhost:8000/admin
-  Total 3 laptop: server ini (proyektor + operator), Tim A, Tim B.
   AI       : aktif (deepseek-flash)
   Suara    : browser (id-ID)
-  HTTPS    : aktif - pastikan sertifikat sudah dipercaya di laptop tim
+  HTTPS    : mati - mikrofon diblokir di http dari laptop lain
   Batas    : 14 instruksi / tim
-==============================================================
+======================================================================
 ```
 
 Checks:
