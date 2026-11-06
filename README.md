@@ -293,7 +293,7 @@ uv sync --extra stt          # faster-whisper, CPU only
 
 ```
 STT_MODE=server
-WHISPER_MODEL=small
+WHISPER_MODEL=base
 ```
 
 Download the model **before** the event, because the venue may have no connection:
@@ -307,16 +307,20 @@ once at startup, warms it with a short silent clip, and runs every decode in a
 single-worker thread so the event loop never blocks. The uploaded clip is deleted
 immediately after transcription; nothing is stored.
 
-Measured on this laptop (CPU, int8, 1.4 s Indonesian clip):
+Measured on this laptop (CPU, int8, 1.4 s Indonesian clip, three runs each):
 
-| model | load + warm | transcribe |
-|---|---|---|
-| `tiny` | 3.0 s | 0.78 s |
-| `base` | 3.0 s | 0.44 s |
+| model | load + warm | transcribe | result |
+|---|---|---|---|
+| `tiny` | 3.0 s | 0.78 s | *Maju dua langkah* |
+| **`base`** (default) | 2.9 s | **0.40 – 0.88 s** | *Maju dua langkah.* |
+| `small` | 2.2 s | 2.9 – 13.3 s | *Maju 2 Langkah* |
 
-`small` is the default per the brief. **If a 4 s clip takes more than about 3 s on the
-venue machine, switch to `base`** — it is roughly twice as fast and still got
-*"Maju dua langkah"* right in testing.
+`small` is 5–15× slower here and no more accurate on the test clip, so **`base` is the
+default**. It also writes the numeral ("Maju 2 Langkah"), which the parser reads correctly —
+both forms land on `MAJU 2 LANGKAH`.
+
+If you have a faster machine, `small` is still worth one timing run: switch with
+`WHISPER_MODEL=base` and keep it only if a 4 s clip stays under about 1.5 s.
 
 > The extra pins `av<19`: `faster-whisper` 1.2.1 calls `av.open(..., metadata_errors=…)`,
 > which PyAV 19 removed. Without the pin every decode dies with a `TypeError`.
@@ -339,7 +343,7 @@ venue machine, switch to `base`** — it is roughly twice as fast and still got
 | `STT_MODE` | `browser` | `browser` \| `server` \| `off` |
 | `STT_LANG` | `id-ID` | passed to the speech engine |
 | `AUTO_SUBMIT_DELAY_MS` | `2000` | countdown before a transcript is sent |
-| `WHISPER_MODEL` | `small` | `tiny` \| `base` \| `small` \| `medium` |
+| `WHISPER_MODEL` | `base` | `tiny` \| `base` \| `small` \| `medium` |
 | `HTTPS_CERT` / `HTTPS_KEY` | *(empty)* | set both to serve TLS; see the HTTPS section |
 
 **Moving the props** is a `config.py` edit only — `OBJECT_TILES` holds every coordinate

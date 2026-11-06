@@ -182,7 +182,9 @@ STT_MODES = ("browser", "server", "off")
 STT_DEFAULT_MODE = "browser"
 STT_LANG = "id-ID"
 AUTO_SUBMIT_DELAY_MS = 2000
-WHISPER_MODEL = "small"
+#: faster-whisper size. Measured on the event laptop, 1.4 s Indonesian clip:
+#: base 0.4-0.9 s, small 3.0-13.3 s for the same text. base wins.
+WHISPER_MODEL = "base"
 #: The page stops the microphone after this much silence.
 STT_SILENCE_MS = 6000
 #: Phase 2 only: refuse absurd uploads before they reach the transcriber.

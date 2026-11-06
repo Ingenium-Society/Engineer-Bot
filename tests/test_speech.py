@@ -105,7 +105,7 @@ def test_stt_defaults():
     assert settings.stt_mode == "browser"
     assert settings.stt_lang == "id-ID"
     assert settings.auto_submit_delay_ms == 2000
-    assert settings.whisper_model == "small"
+    assert settings.whisper_model == "base"
     assert settings.scheme == "http"
 
 
