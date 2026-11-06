@@ -46,7 +46,7 @@ class FakeClock:
 
 async def main() -> int:
     clock = FakeClock()
-    settings = config.Settings(deepseek_api_key="")
+    settings = config.Settings(ai_api_key="")
     game = Game(settings, clock=clock, log_dir=config.PROJECT_ROOT / "logs")
 
     async def always_accept(_pending):

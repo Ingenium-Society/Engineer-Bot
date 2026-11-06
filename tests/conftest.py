@@ -60,7 +60,7 @@ def make_game(logdir, clock, monkeypatch):
             max_instructions=overrides.pop("max_instructions", 14),
             turn_seconds=overrides.pop("turn_seconds", 20.0),
             play_seconds=overrides.pop("play_seconds", 330.0),
-            deepseek_api_key="",
+            ai_api_key="",
             **overrides,
         )
         game = Game(settings, ai=ai, clock=clock, log_dir=logdir)

@@ -228,7 +228,7 @@ fallback was used. For a number you can quote in the report:
 # ten real translations, median and max
 for i in $(seq 10); do
   curl -s -o /dev/null -w "%{time_total}\n" \
-    -H "Authorization: Bearer $DEEPSEEK_API_KEY" -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $AI_API_KEY" -H "Content-Type: application/json" \
     -d '{"model":"deepseek-flash","messages":[{"role":"user","content":"maju 2 langkah"}],"max_tokens":8,"thinking":{"type":"disabled"}}' \
     https://api.deepseek.com/chat/completions
 done | sort -n | awk '{a[NR]=$1} END {print "median", a[int(NR/2)+1], "max", a[NR]}'
@@ -331,9 +331,10 @@ If you have a faster machine, `small` is still worth one timing run: switch with
 
 | Key | Default | Meaning |
 |---|---|---|
-| `DEEPSEEK_API_KEY` | *(empty)* | empty = the keyword parser answers, no network |
-| `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | |
-| `DEEPSEEK_MODEL` | `deepseek-flash` | `deepseek-chat` is the legacy alias |
+| `AI_BASE_URL` | `https://api.deepseek.com` | any OpenAI-compatible host; see below |
+| `AI_MODEL` | `deepseek-flash` | whatever that server calls the model |
+| `AI_API_KEY` | *(empty)* | optional for a loopback or private address |
+| `AI_JSON_MODE` | `true` | set `false` for a server that rejects `response_format` |
 | `AI_TIMEOUT_SECONDS` | `3` | then the keyword fallback takes over |
 | `ADMIN_PIN` | `1234` | keeps the audience out of `/admin` |
 | `MAX_INSTRUCTIONS` | `14` | per team, accepted and rejected both count |
@@ -345,6 +346,33 @@ If you have a faster machine, `small` is still worth one timing run: switch with
 | `AUTO_SUBMIT_DELAY_MS` | `2000` | countdown before a transcript is sent |
 | `WHISPER_MODEL` | `base` | `tiny` \| `base` \| `small` \| `medium` |
 | `HTTPS_CERT` / `HTTPS_KEY` | *(empty)* | set both to serve TLS; see the HTTPS section |
+
+### Any model, any provider
+
+The client speaks plain `/chat/completions`, so nothing here is tied to one vendor.
+Point `AI_BASE_URL` at whatever you run:
+
+| | `AI_BASE_URL` | `AI_MODEL` | key |
+|---|---|---|---|
+| DeepSeek | `https://api.deepseek.com` | `deepseek-flash` | required |
+| OpenAI | `https://api.openai.com/v1` | `gpt-4o-mini` | required |
+| Ollama | `http://127.0.0.1:11434/v1` | `llama3.1:8b` | not needed |
+| llama.cpp | `http://127.0.0.1:8080/v1` | whatever `-m` loaded | not needed |
+| LM Studio | `http://127.0.0.1:1234/v1` | the loaded model | not needed |
+| vLLM | `http://127.0.0.1:8000/v1` | the served name | not needed |
+
+A **loopback or private address needs no key**; a public host without one counts as
+not configured and the keyword parser answers instead, with no wasted requests. The
+`Authorization` header is only sent when a key exists, so keyless local servers are never
+handed a bogus `Bearer`. The one provider-specific field — DeepSeek's `thinking` — is
+only added when the host is actually DeepSeek.
+
+If a local server rejects `response_format`, set `AI_JSON_MODE=false`; the prompt already
+demands bare JSON, and fenced or chatty replies are unwrapped before parsing.
+
+A local model is slower and sloppier than a hosted one. Watch the latency dot on the admin
+page for the first few instructions; if it is consistently over ~2 s, raise
+`AI_TIMEOUT_SECONDS` rather than let every instruction fall back to the parser.
 
 **Moving the props** is a `config.py` edit only — `OBJECT_TILES` holds every coordinate
 and `START_X` / `START_Y` / `START_HEADING` the start pose. No magic numbers elsewhere.

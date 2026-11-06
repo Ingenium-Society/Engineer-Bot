@@ -756,7 +756,7 @@ class Game:
             "winner": self.winner,
             "turn": self.turn,
             "ai_available": bool(self.ai is not None and getattr(self.ai, "available", False)),
-            "ai_model": self.settings.deepseek_model if self.ai is not None else None,
+            "ai_model": self.settings.ai_model if self.ai is not None else None,
             "round_seconds_left": round(self._round_left(), 1),
             "teams": {team_id: self.admin_team_view(team_id).model_dump() for team_id in TEAM_IDS},
         }
@@ -812,7 +812,7 @@ class Game:
                     "turn_seconds": self.settings.turn_seconds,
                     "play_seconds": self.settings.play_seconds,
                     "filter_seconds": self.settings.filter_seconds,
-                    "deepseek_model": self.settings.deepseek_model,
+                    "ai_model": self.settings.ai_model,
                 },
             },
             "teams": {

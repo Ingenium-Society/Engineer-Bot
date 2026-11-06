@@ -151,11 +151,11 @@ def test_transcriber_is_null_when_the_mode_is_off():
 
 def make_client() -> TestClient:
     # stt_mode stays "browser" so the lifespan never tries to load a model.
-    return TestClient(create_app(config.Settings(stt_mode="browser", deepseek_api_key="")))
+    return TestClient(create_app(config.Settings(stt_mode="browser", ai_api_key="")))
 
 
 def test_upload_route_returns_the_transcript():
-    app = create_app(config.Settings(stt_mode="browser", deepseek_api_key=""))
+    app = create_app(config.Settings(stt_mode="browser", ai_api_key=""))
     with TestClient(app) as client:
         app.state.stt = SttService(FakeTranscriber("ambil gelas"))
         response = client.post(
@@ -169,7 +169,7 @@ def test_upload_route_returns_the_transcript():
 
 
 def test_upload_route_reports_a_missing_engine():
-    app = create_app(config.Settings(stt_mode="browser", deepseek_api_key=""))
+    app = create_app(config.Settings(stt_mode="browser", ai_api_key=""))
     with TestClient(app) as client:
         response = client.post(
             "/api/stt/a",
@@ -180,7 +180,7 @@ def test_upload_route_reports_a_missing_engine():
 
 
 def test_upload_route_rejects_an_unknown_team():
-    app = create_app(config.Settings(stt_mode="browser", deepseek_api_key=""))
+    app = create_app(config.Settings(stt_mode="browser", ai_api_key=""))
     with TestClient(app) as client:
         app.state.stt = SttService(FakeTranscriber())
         response = client.post(

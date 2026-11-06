@@ -1,13 +1,15 @@
-"""DeepSeek client.
+"""The translator client: any OpenAI-compatible chat endpoint.
 
-Verified against the official docs (2026-11):
+Nothing here is tied to one provider. Point ``AI_BASE_URL`` at DeepSeek, OpenAI,
+Ollama, llama.cpp, vLLM or LM Studio and it works, because:
 
-* endpoint ``POST https://api.deepseek.com/chat/completions``
-* current model name ``deepseek-flash`` (``deepseek-chat`` is the legacy alias)
-* JSON mode = ``response_format: {"type": "json_object"}``; the prompt must
-  contain the word "JSON", and a failed parse comes back as blank content
-* thinking mode is **on by default**, which is far too slow for a 3 s budget,
-  so it is explicitly disabled
+* the request is plain ``POST {base}/chat/completions`` with the standard body
+* ``Authorization`` is only sent when there is a key, so keyless local servers
+  are not handed a bogus ``Bearer``
+* the one provider-specific field (DeepSeek's ``thinking``) is only added when
+  the host is actually DeepSeek
+* the reply is read from ``choices[0].message.content``, tolerating both a
+  string and the newer list-of-parts shape, and fenced or chatty JSON
 
 One client is created at startup and reused (keep-alive), because a fresh TLS
 handshake per instruction would eat most of the timeout.
@@ -20,6 +22,7 @@ import json
 import re
 import time
 from collections import OrderedDict
+from urllib.parse import urlparse
 
 import httpx
 from pydantic import ValidationError
@@ -29,6 +32,7 @@ from .models import Command, TranslationResult
 
 CACHE_SIZE = 256
 _FENCE = re.compile(r"^```(?:json)?|```$", re.MULTILINE)
+_JSON_OBJECT = re.compile(r"\{.*\}", re.DOTALL)
 
 
 class AIClient:
@@ -51,23 +55,33 @@ class AIClient:
 
     @property
     def available(self) -> bool:
-        return bool(self.settings.deepseek_api_key)
+        """Configured well enough to try: a model, and either a key or a local host."""
+        if not self.settings.ai_model:
+            return False
+        return self.settings.ai_configured
 
     def _endpoint(self) -> str:
-        base = self.settings.deepseek_base_url.rstrip("/")
+        base = self.settings.ai_base_url.rstrip("/")
         if base.endswith("/chat/completions"):
             return base
         return f"{base}/chat/completions"
+
+    def _is_deepseek(self) -> bool:
+        host = urlparse(self.settings.ai_base_url).hostname or ""
+        return host.endswith("deepseek.com")
+
+    def _headers(self) -> dict[str, str]:
+        headers = {"Content-Type": "application/json"}
+        if self.settings.ai_api_key:
+            headers["Authorization"] = f"Bearer {self.settings.ai_api_key}"
+        return headers
 
     async def startup(self) -> None:
         """Create the keep-alive client and warm the connection up."""
         if self._client is None:
             self._client = httpx.AsyncClient(
                 timeout=httpx.Timeout(self.settings.ai_timeout_seconds),
-                headers={
-                    "Authorization": f"Bearer {self.settings.deepseek_api_key}",
-                    "Content-Type": "application/json",
-                },
+                headers=self._headers(),
                 transport=self._transport,
             )
         if not self.available:
@@ -76,11 +90,11 @@ class AIClient:
             await self._client.post(
                 self._endpoint(),
                 json={
-                    "model": self.settings.deepseek_model,
+                    "model": self.settings.ai_model,
                     "messages": [{"role": "user", "content": "ping"}],
                     "max_tokens": 1,
-                    "thinking": {"type": "disabled"},
                     "stream": False,
+                    **({"thinking": {"type": "disabled"}} if self._is_deepseek() else {}),
                 },
             )
 
@@ -92,18 +106,23 @@ class AIClient:
     # -- translation -------------------------------------------------------
 
     def _payload(self, text: str) -> dict:
-        return {
-            "model": self.settings.deepseek_model,
+        payload: dict = {
+            "model": self.settings.ai_model,
             "messages": [
                 {"role": "system", "content": config.SYSTEM_PROMPT},
                 {"role": "user", "content": config.USER_PROMPT_TEMPLATE.format(text=text)},
             ],
             "temperature": 0,
             "max_tokens": 80,
-            "response_format": {"type": "json_object"},
-            "thinking": {"type": "disabled"},
             "stream": False,
         }
+        if self.settings.ai_json_mode:
+            payload["response_format"] = {"type": "json_object"}
+        # DeepSeek thinks by default, which blows the 3 s budget. Only send the
+        # flag where it is understood.
+        if self._is_deepseek():
+            payload["thinking"] = {"type": "disabled"}
+        return payload
 
     def _cache_get(self, key: str) -> Command | None:
         if key not in self._cache:
@@ -120,14 +139,34 @@ class AIClient:
     @staticmethod
     def _extract_content(body: dict) -> str:
         try:
-            return body["choices"][0]["message"]["content"] or ""
+            content = body["choices"][0]["message"]["content"]
         except (KeyError, IndexError, TypeError):
             return ""
+        if isinstance(content, list):  # some servers answer with content parts
+            return "".join(part.get("text", "") for part in content if isinstance(part, dict))
+        return content or ""
+
+    @staticmethod
+    def _parse(content: str) -> Command | None:
+        """Accept a bare object, a fenced block, or an object inside prose."""
+        raw = _FENCE.sub("", content).strip()
+        if not raw:
+            return None
+        try:
+            return Command.model_validate_json(raw)
+        except ValidationError:
+            match = _JSON_OBJECT.search(raw)
+            if match is None:
+                return None
+            try:
+                return Command.model_validate_json(match.group(0))
+            except ValidationError:
+                return None
 
     async def translate(self, text: str) -> TranslationResult | None:
         """Return a translated command, or ``None`` if the model let us down."""
         if not self.available or self._client is None:
-            self.last_error = "no_api_key"
+            self.last_error = "not_configured"
             return None
 
         key = " ".join(text.lower().split())
@@ -159,15 +198,14 @@ class AIClient:
             self.last_error = "bad_envelope"
             return None
 
-        content = _FENCE.sub("", self._extract_content(body)).strip()
-        if not content:
-            # JSON mode replaces unparseable output with spaces.
+        content = self._extract_content(body)
+        if not content.strip():
+            # JSON mode replaces unparseable output with blank content.
             self.last_error = "empty_content"
             return None
 
-        try:
-            command = Command.model_validate_json(content)
-        except ValidationError:
+        command = self._parse(content)
+        if command is None:
             self.last_error = "schema_mismatch"
             return None
 

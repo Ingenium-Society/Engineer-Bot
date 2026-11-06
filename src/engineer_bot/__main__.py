@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import socket
+from urllib.parse import urlparse
 
 import uvicorn
 
@@ -53,8 +54,9 @@ def banner(host: str, port: int, settings: config.Settings) -> str:
     lines.append(row("Tim A", f"{lan}/team/a"))
     lines.append(row("Tim B", f"{lan}/team/b"))
     lines.append("")
-    if settings.deepseek_api_key:
-        lines.append(row("AI", f"aktif ({settings.deepseek_model})"))
+    if settings.ai_configured:
+        host = urlparse(settings.ai_base_url).hostname or settings.ai_base_url
+        lines.append(row("AI", f"{settings.ai_model} @ {host}"))
     else:
         lines.append(row("AI", "mati - memakai parser kata kunci"))
     if settings.stt_mode == "off":

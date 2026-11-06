@@ -7,9 +7,11 @@ this file (plus `.env` for the deployment-specific bits).
 
 from __future__ import annotations
 
+import ipaddress
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 
@@ -202,8 +204,14 @@ PROCESSING_MIN_MS = 700
 DRAFT_MAX = 80
 
 # --------------------------------------------------------------------------
-# DeepSeek
+# The translator: any OpenAI-compatible endpoint, cloud or local
 # --------------------------------------------------------------------------
+
+AI_BASE_URL = "https://api.deepseek.com"
+AI_MODEL = "deepseek-flash"
+#: Ask for a JSON object. Every mainstream server supports it; set
+#: AI_JSON_MODE=false for one that rejects the field.
+AI_JSON_MODE = True
 
 SYSTEM_PROMPT = """Kamu adalah penerjemah instruksi untuk robot dalam permainan edukasi.
 Ubah kalimat pengguna menjadi JSON. HANYA keluarkan JSON, tanpa teks lain.
@@ -240,6 +248,33 @@ def _int_env(name: str, default: int) -> int:
         return default
 
 
+def is_local_url(base_url: str) -> bool:
+    """A loopback or private address needs no API key."""
+    host = urlparse(base_url).hostname or ""
+    if host in ("localhost", "127.0.0.1", "::1", "0.0.0.0"):
+        return True
+    try:
+        return ipaddress.ip_address(host).is_private
+    except ValueError:
+        return False
+
+
+def _bool_env(name: str, default: bool) -> bool:
+    raw = os.getenv(name, "").strip().lower()
+    if not raw:
+        return default
+    return raw in ("1", "true", "yes", "on")
+
+
+def _first_env(*names: str) -> str:
+    """First non-empty value, so AI_* wins over the legacy DEEPSEEK_*."""
+    for name in names:
+        value = os.getenv(name, "").strip()
+        if value:
+            return value
+    return ""
+
+
 def _float_env(name: str, default: float) -> float:
     raw = os.getenv(name, "").strip()
     if not raw:
@@ -254,9 +289,10 @@ def _float_env(name: str, default: float) -> float:
 class Settings:
     """Everything that can differ between the rehearsal desk and the venue."""
 
-    deepseek_api_key: str = ""
-    deepseek_base_url: str = "https://api.deepseek.com"
-    deepseek_model: str = "deepseek-flash"
+    ai_base_url: str = AI_BASE_URL
+    ai_model: str = AI_MODEL
+    ai_api_key: str = ""
+    ai_json_mode: bool = AI_JSON_MODE
     ai_timeout_seconds: float = 3.0
     admin_pin: str = "1234"
     max_instructions: int = 14
@@ -275,16 +311,23 @@ class Settings:
         """The microphone only works on a secure origin, so the banner must match."""
         return "https" if self.https_cert and self.https_key else "http"
 
+    @property
+    def ai_configured(self) -> bool:
+        """A model, and either a key or a local endpoint."""
+        if not self.ai_model:
+            return False
+        return bool(self.ai_api_key) or is_local_url(self.ai_base_url)
+
     @classmethod
     def from_env(cls) -> Settings:
         mode = os.getenv("STT_MODE", "").strip().lower() or STT_DEFAULT_MODE
         if mode not in STT_MODES:
             mode = STT_DEFAULT_MODE
         return cls(
-            deepseek_api_key=os.getenv("DEEPSEEK_API_KEY", "").strip(),
-            deepseek_base_url=os.getenv("DEEPSEEK_BASE_URL", "").strip()
-            or "https://api.deepseek.com",
-            deepseek_model=os.getenv("DEEPSEEK_MODEL", "").strip() or "deepseek-flash",
+            ai_api_key=_first_env("AI_API_KEY", "DEEPSEEK_API_KEY"),
+            ai_base_url=_first_env("AI_BASE_URL", "DEEPSEEK_BASE_URL") or AI_BASE_URL,
+            ai_model=_first_env("AI_MODEL", "DEEPSEEK_MODEL") or AI_MODEL,
+            ai_json_mode=_bool_env("AI_JSON_MODE", AI_JSON_MODE),
             ai_timeout_seconds=_float_env("AI_TIMEOUT_SECONDS", 3.0),
             admin_pin=os.getenv("ADMIN_PIN", "").strip() or "1234",
             max_instructions=_int_env("MAX_INSTRUCTIONS", 14),

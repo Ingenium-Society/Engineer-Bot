@@ -1,4 +1,4 @@
-"""DeepSeek client: envelope handling, failure modes, cache and fallback.
+"""Translator client: any OpenAI-compatible endpoint, failure modes, cache.
 
 Every test mocks the HTTP layer. Nothing here touches the network.
 """
@@ -24,9 +24,11 @@ class Recorder:
 
     def __init__(self, replies=None) -> None:
         self.calls: list[dict] = []
+        self.requests: list[httpx.Request] = []
         self.replies = replies or []
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
+        self.requests.append(request)
         payload = json.loads(request.content)
         if payload["messages"][-1]["content"] == "ping":
             return httpx.Response(200, json=envelope("{}"))
@@ -39,9 +41,19 @@ class Recorder:
         return reply
 
 
-def build(recorder: Recorder, key: str = "test-key") -> AIClient:
+def build(
+    recorder: Recorder,
+    key: str = "test-key",
+    base: str | None = None,
+    model: str = "deepseek-flash",
+    json_mode: bool = True,
+) -> AIClient:
     settings = config.Settings(
-        deepseek_api_key=key, deepseek_model="deepseek-flash", ai_timeout_seconds=3
+        ai_api_key=key,
+        ai_base_url=base or config.AI_BASE_URL,
+        ai_model=model,
+        ai_json_mode=json_mode,
+        ai_timeout_seconds=3,
     )
     return AIClient(settings, transport=httpx.MockTransport(recorder))
 
@@ -148,7 +160,7 @@ async def test_missing_key_means_no_call():
     await client.startup()
     assert client.available is False
     assert await client.translate("maju 2") is None
-    assert client.last_error == "no_api_key"
+    assert client.last_error == "not_configured"
     await client.aclose()
 
 
@@ -228,3 +240,120 @@ async def test_the_model_explanation_survives_the_json_round_trip():
     await client.aclose()
     assert result is not None
     assert result.command.alasan == "langka dibaca langkah"
+
+
+# ------------------------------------------------------- provider agnostic
+
+
+async def test_a_local_endpoint_needs_no_key():
+    recorder = Recorder()
+    client = build(recorder, key="", base="http://127.0.0.1:11434/v1")
+    await client.startup()
+    assert client.available is True
+    result = await client.translate("maju 2")
+    await client.aclose()
+    assert result is not None
+    assert len(recorder.calls) == 1
+
+
+async def test_a_remote_endpoint_still_needs_a_key():
+    recorder = Recorder()
+    client = build(recorder, key="", base="https://api.openai.com/v1")
+    await client.startup()
+    assert client.available is False
+    assert await client.translate("maju 2") is None
+    assert recorder.calls == []
+    await client.aclose()
+
+
+async def test_no_authorization_header_without_a_key():
+    recorder = Recorder()
+    client = build(recorder, key="", base="http://192.168.1.9:8080/v1")
+    await client.startup()
+    await client.translate("maju 2")
+    await client.aclose()
+    assert "authorization" not in {k.lower() for k in recorder.requests[-1].headers}
+
+
+async def test_a_key_is_sent_as_a_bearer_token():
+    recorder = Recorder()
+    client = build(recorder, key="sk-test", base="https://api.openai.com/v1")
+    await client.startup()
+    await client.translate("maju 2")
+    await client.aclose()
+    assert recorder.requests[-1].headers["authorization"] == "Bearer sk-test"
+
+
+async def test_deepseek_gets_the_thinking_flag_and_others_do_not():
+    recorder = Recorder()
+    client = build(recorder, base="https://api.deepseek.com")
+    await client.startup()
+    await client.translate("maju 2")
+    await client.aclose()
+    assert recorder.calls[-1]["thinking"] == {"type": "disabled"}
+
+    recorder = Recorder()
+    client = build(recorder, base="http://127.0.0.1:1234/v1", key="")
+    await client.startup()
+    await client.translate("maju 2")
+    await client.aclose()
+    assert "thinking" not in recorder.calls[-1]
+
+
+async def test_the_json_mode_field_can_be_turned_off():
+    recorder = Recorder()
+    client = build(recorder, base="http://127.0.0.1:8080/v1", key="", json_mode=False)
+    await client.startup()
+    await client.translate("maju 2")
+    await client.aclose()
+    assert "response_format" not in recorder.calls[-1]
+
+
+@pytest.mark.parametrize(
+    "base",
+    [
+        "https://api.deepseek.com",
+        "https://api.openai.com/v1",
+        "http://127.0.0.1:11434/v1",
+        "http://127.0.0.1:8080/v1/",
+    ],
+)
+async def test_every_base_url_resolves_to_chat_completions(base):
+    recorder = Recorder()
+    client = build(recorder, base=base)
+    await client.startup()
+    await client.translate("maju 2")
+    await client.aclose()
+    assert str(recorder.requests[-1].url).endswith("/chat/completions")
+    assert "/chat/completions/chat/completions" not in str(recorder.requests[-1].url)
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        '{"verb":"MAJU","n":2}',
+        '```json\n{"verb":"MAJU","n":2}\n```',
+        'Tentu: {"verb":"MAJU","n":2} semoga membantu.',
+    ],
+)
+async def test_fenced_and_chatty_json_both_parse(content):
+    recorder = Recorder([httpx.Response(200, json=envelope(content))])
+    client = build(recorder)
+    await client.startup()
+    result = await client.translate("maju dua langkah")
+    await client.aclose()
+    assert result is not None
+    assert result.command.verb is Verb.MAJU
+
+
+async def test_content_returned_as_parts_is_joined():
+    body = {
+        "choices": [{"message": {"content": [{"type": "text", "text": '{"verb":"MAJU","n":3}'}]}}]
+    }
+    recorder = Recorder([httpx.Response(200, json=body)])
+    client = build(recorder)
+    await client.startup()
+    result = await client.translate("maju tiga langkah")
+    await client.aclose()
+    assert result is not None
+    assert result.command.n == 3
