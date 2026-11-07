@@ -26,13 +26,14 @@
   }
 
   /* Reconnect forever: a laptop lid closing mid-round must not kill the page. */
-  function connect(path, onMessage) {
+  function connect(path, onMessage, onState) {
     var socket = null;
     var queue = [];
 
     function open() {
       socket = new WebSocket(socketPath(path));
       socket.onopen = function () {
+        if (onState) onState(true);
         while (queue.length) {
           socket.send(queue.shift());
         }
@@ -47,6 +48,7 @@
         onMessage(payload);
       };
       socket.onclose = function () {
+        if (onState) onState(false);
         setTimeout(open, 1000);
       };
       socket.onerror = function () {
@@ -98,6 +100,7 @@
     document.title = els.name.textContent + ' · The Engineer-Bot';
 
     var state = null;
+    var connected = true;
     var spoken = 0;
     var ttsEnabled = localStorage.getItem('eb_tts') === '1';
     els.tts.checked = ttsEnabled;
@@ -294,6 +297,7 @@
     }
 
     function statusFor(view) {
+      if (!connected) return 'Menyambung ulang…';
       if (view.round_over) {
         return view.winner === teamId ? 'Tim kami menang!' : 'Ronde selesai';
       }
@@ -457,13 +461,17 @@
       startListening();
     });
 
-    var link = connect('/ws/team/' + teamId, render);
+    var link = connect('/ws/team/' + teamId, render, function (up) {
+      connected = up;
+      if (state) render(state);
+    });
   }
 
   /* ----------------------------------------------------------------- admin */
 
   function initAdmin() {
     var state = null;
+    var connected = true;
     var keyA = localStorage.getItem('eb_key_a') || 'a';
     var keyB = localStorage.getItem('eb_key_b') || 'l';
 
@@ -641,10 +649,15 @@
 
       var turnLabel = view.turn === 'a' ? 'Tim A' : (view.turn === 'b' ? 'Tim B' : '-');
       els.turn.textContent = turnLabel;
-      els.chip.textContent = view.round_over
-        ? 'SELESAI'
-        : (view.turn ? 'GILIRAN ' + turnLabel.toUpperCase() : 'SIAP');
-      els.chip.className = 'turn-chip' + (view.turn && !view.round_over ? ' active' : '');
+      if (!connected) {
+        els.chip.textContent = 'TERPUTUS';
+        els.chip.className = 'turn-chip';
+      } else {
+        els.chip.textContent = view.round_over
+          ? 'SELESAI'
+          : (view.turn ? 'GILIRAN ' + turnLabel.toUpperCase() : 'SIAP');
+        els.chip.className = 'turn-chip' + (view.turn && !view.round_over ? ' active' : '');
+      }
 
       els.start.disabled = view.started && !view.round_over;
       els.pause.disabled = !view.started || view.paused || view.round_over;
@@ -707,7 +720,10 @@
       link.send({ type: event.shiftKey ? 'redo' : 'done', team: team });
     });
 
-    var link = connect('/ws/admin', render);
+    var link = connect('/ws/admin', render, function (up) {
+      connected = up;
+      if (state) render(state);
+    });
   }
 
   /* ---------------------------------------------------------------- screen */

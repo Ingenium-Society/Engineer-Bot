@@ -244,6 +244,10 @@
     var listening = false;
     var startedAt = 0;
     var stopWatch = null;
+    var mimeType = '';
+    // abort() stops the recorder and releases it immediately, but onstop still
+    // fires afterwards: by then `recorder` is null and the clip is unwanted.
+    var discarded = false;
 
     function release() {
       if (stopWatch) {
@@ -260,6 +264,7 @@
     }
 
     function abort() {
+      discarded = true;
       listening = false;
       if (recorder && recorder.state !== 'inactive') {
         try {
@@ -294,17 +299,21 @@
         .then(function (mediaStream) {
           stream = mediaStream;
           chunks = [];
-          recorder = new MediaRecorder(mediaStream, { mimeType: pickMime() });
+          discarded = false;
+          mimeType = pickMime();
+          recorder = new MediaRecorder(mediaStream, { mimeType: mimeType });
           recorder.ondataavailable = function (event) {
             if (event.data && event.data.size) chunks.push(event.data);
           };
           recorder.onstop = function () {
             var elapsed = Math.round(window.performance.now() - startedAt);
-            var blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' });
+            var blob = new Blob(chunks, { type: mimeType || 'audio/webm' });
+            var skip = discarded;
             chunks = [];
+            discarded = false;
             release();
             listening = false;
-            upload(blob, elapsed);
+            if (!skip) upload(blob, elapsed);
           };
           recorder.start();
           listening = true;

@@ -545,6 +545,9 @@ laptops, once, before the day.
 | `ADMIN_PIN` rejected | PIN is read at startup; restart after editing `.env` |
 | Projector shows nothing | the page is not on `/screen`, or the laptop mirrored instead of extended |
 | Projector frozen on the last verdict | the socket dropped — reload; it reconnects and shows the current state |
+| Team page says *Menyambung ulang…* | the WebSocket is down; the page retries every second, nothing else needs doing |
+| `wss://…` fails with *bad response from the server* through a tunnel | cloudflared is forwarding to `http://localhost:8000` but the app is serving https — it was started without `PUBLIC_URL`. Restart the app with it set, then hard-reload the page: a cached page hides the mismatch until the socket fails |
+| Everything is refused with *Kunci API model belum diisi* | `AI_API_KEY` is empty |
 | Projector shows a verdict for the wrong team | impossible by construction: `last.team` comes from the verdict itself, not from `turn` |
 | `uv run` cannot find the package | run `uv sync` in the project root |
 | Mic button greyed out | the turn is not in `TYPING`, or the page reported `denied` / `offline` |
