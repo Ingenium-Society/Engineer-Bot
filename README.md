@@ -74,9 +74,32 @@ uv run python scripts/simulate.py          # full dry run, no AI, no browser
 
 | Laptop | What it runs |
 |---|---|
-| **Server** | the app, the projector (`/screen` on the extended display) **and** the operator page (`/admin` on its own screen) |
+| **Server** | the app, the projector (`/screen` on the extended display) **and** `/admin` on its own screen — **the Lead sits here** |
 | Team A | `/team/a` |
 | Team B | `/team/b` |
+
+### Who stands where
+
+Ten people, three screens. The only job that touches the keyboard is the judge.
+
+| Role | Screen | Job |
+|---|---|---|
+| **Lead — the judge** | `/admin` | Reads each sentence, presses **Terima** or **Tolak**. The only person who may click it |
+| **Time Keeper** | none | Watches the round clock on the projector; calls the last 30 s. The app times itself, so this is supervision, not control |
+| **Robots (2)** | none | One per table, acting out what the judge accepted |
+| **Instructors (5)** | none | Brief and help the players *write* the sentence. **Hands off the keyboard** — an instructor who types is playing the game for the team |
+| **Pitch / MC** | `/screen` (projector) | Narrates. The screen shows whose turn it is, the sentence, the verdict and the score |
+| **Cameraman** | none | |
+
+With **6 players per team**, two turns each is 12 instructions — so:
+
+```
+MAX_INSTRUCTIONS=12     # two per player, no one sits out
+PLAY_SECONDS=420        # 24 turns at ~17 s each, confirmation included
+```
+
+At the default `330` s you get 13.7 s per turn, and the judge's click alone eats
+three of them.
 
 1. **Same WiFi, no internet needed on the team laptops.** Everything (CSS, JS, fonts) is
    served by this machine. No CDN, no build step.
