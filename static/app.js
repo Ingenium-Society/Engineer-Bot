@@ -26,13 +26,17 @@
   }
 
   /* Reconnect forever: a laptop lid closing mid-round must not kill the page. */
-  function connect(path, onMessage, onState) {
+  function connect(path, onMessage, onState, onFatal) {
     var socket = null;
     var queue = [];
+    var lastHeard = Date.now();
+    var attempt = 0;
 
     function open() {
       socket = new WebSocket(socketPath(path));
       socket.onopen = function () {
+        lastHeard = Date.now();
+        attempt = 0;
         if (onState) onState(true);
         while (queue.length) {
           socket.send(queue.shift());
@@ -45,11 +49,19 @@
         } catch (err) {
           return;
         }
+        lastHeard = Date.now();
         onMessage(payload);
       };
-      socket.onclose = function () {
+      socket.onclose = function (event) {
         if (onState) onState(false);
-        setTimeout(open, 1000);
+        // 4403 is a refused PIN, 4404 an unknown team: retrying cannot fix
+        // either, and a one-second loop hammers the server forever.
+        if (event && (event.code === 4403 || event.code === 4404)) {
+          if (onFatal) onFatal(event.code);
+          return;
+        }
+        attempt += 1;
+        setTimeout(open, Math.min(1000 * Math.pow(2, attempt - 1), 5000));
       };
       socket.onerror = function () {
         if (socket) socket.close();
@@ -57,6 +69,21 @@
     }
 
     open();
+
+    /* The server broadcasts once a second, so silence means the socket is dead
+     * even if the browser still thinks it is open. A projector is never looked
+     * at, so it reloads itself; the other pages just reopen the socket. */
+    var kiosk = document.body.dataset.page === 'screen';
+    setInterval(function () {
+      if (document.visibilityState !== 'visible') return;
+      if (Date.now() - lastHeard < 6000) return;
+      if (kiosk) {
+        location.reload();
+        return;
+      }
+      lastHeard = Date.now();
+      if (socket) socket.close();
+    }, 2000);
 
     return {
       send: function (payload) {
@@ -736,10 +763,23 @@
       link.send({ type: event.shiftKey ? 'redo' : 'done', team: team });
     });
 
-    var link = connect('/ws/admin', render, function (up) {
-      connected = up;
-      if (state) render(state);
-    });
+    var link = connect(
+      '/ws/admin',
+      render,
+      function (up) {
+        connected = up;
+        if (up) sessionStorage.removeItem('eb_pin_retry');
+        if (state) render(state);
+      },
+      function (code) {
+        // The PIN cookie is gone or wrong. Go back to the gate once, rather
+        // than showing a frozen round and retrying forever.
+        if (code === 4403 && !sessionStorage.getItem('eb_pin_retry')) {
+          sessionStorage.setItem('eb_pin_retry', '1');
+          location.replace('/admin');
+        }
+      }
+    );
   }
 
   /* ---------------------------------------------------------------- screen */
@@ -895,10 +935,17 @@
     function paint() {
       if (!view) return;
 
-      els.clock.textContent = fmtClock(view.round_seconds_left);
-      els.clock.className =
-        'board-clock' +
-        (view.round_seconds_left <= 30 && !view.round_over ? ' urgent' : '');
+      // Before the round starts the clock is zero, and zero in red reads as
+      // "time is up". Say nothing until there is a round to time.
+      if (!view.started) {
+        els.clock.textContent = '--:--';
+        els.clock.className = 'board-clock';
+      } else {
+        els.clock.textContent = fmtClock(view.round_seconds_left);
+        els.clock.className =
+          'board-clock' +
+          (view.round_seconds_left <= 30 && !view.round_over ? ' urgent' : '');
+      }
 
       paintTeams();
 

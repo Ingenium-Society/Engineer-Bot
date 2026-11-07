@@ -107,6 +107,25 @@ def create_app(settings: config.Settings | None = None) -> FastAPI:
     if STATIC_DIR.exists():
         app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
+        @app.middleware("http")
+        async def no_stale_pages(request, call_next):
+            """A venue laptop must never run yesterday's JavaScript.
+
+            There is no build hash and no CDN, so a cached page is the one way
+            to end up with old behaviour on a machine nobody reloads. The cost
+            of revalidating on a LAN is a conditional request.
+            """
+            response = await call_next(request)
+            if request.url.path.startswith("/static") or request.url.path in (
+                "/",
+                "/screen",
+                "/admin",
+                "/team/a",
+                "/team/b",
+            ):
+                response.headers["Cache-Control"] = "no-cache, must-revalidate"
+            return response
+
     # -- pages ---------------------------------------------------------
 
     def page(name: str) -> FileResponse:
