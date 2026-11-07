@@ -137,11 +137,39 @@ turn, which is the point: precision is the whole game.
 > If rehearsals feel rushed, lower `MAX_INSTRUCTIONS` to 10 or raise `PLAY_SECONDS`.
 > Both are `.env` values, nothing else needs to change.
 
+### Two networking modes
+
+One variable decides how the team laptops reach the server.
+
+| | **LAN mode** (default) | **Tunnel mode** |
+|---|---|---|
+| `PUBLIC_URL` | empty | `https://<random>.trycloudflare.com` |
+| Team URL | `https://192.168.1.24:8000` | the tunnel URL |
+| TLS | your mkcert cert, CA trusted on each laptop | terminated by the tunnel |
+| Needs internet | **no** | **yes, on the server too** |
+| If the WiFi drops | mic dies, keyboard and projector keep running | every page dies |
+
+LAN mode is the default and the right answer for a school hall: the game keeps running
+with no internet at all.
+
+Tunnel mode is the escape hatch for school-managed laptops where you cannot install a root
+CA. Start the tunnel first, then the server with the URL it printed:
+
+```bash
+cloudflared tunnel --url http://localhost:8000
+PUBLIC_URL=https://<the-url-it-prints> uv run python -m engineer_bot
+```
+
+`PUBLIC_URL` only changes what the banner prints and how uvicorn treats proxy headers —
+the pages already build `wss://` from the address bar, so nothing else moves.
+`HTTPS_CERT` / `HTTPS_KEY` are ignored in this mode. Anyone with the URL can open
+`/team/a`; `/admin` still needs the PIN.
+
 ### HTTPS — required for the microphone
 
-Browsers only hand out the microphone on a **secure origin**. `http://localhost` counts,
-`http://192.168.x.x` does not, so the team laptops get `no-mic` until you serve TLS.
-The keyboard works either way; only voice needs this.
+LAN mode only. Browsers only hand out the microphone on a **secure origin**.
+`http://localhost` counts, `http://192.168.x.x` does not, so the team laptops get
+`no-mic` until you serve TLS. The keyboard works either way; only voice needs this.
 
 **On the server (macOS):**
 

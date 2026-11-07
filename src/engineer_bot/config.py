@@ -294,6 +294,9 @@ class Settings:
     ai_api_key: str = ""
     ai_json_mode: bool = AI_JSON_MODE
     ai_timeout_seconds: float = 3.0
+    #: Set to a public https URL to run behind a tunnel (cloudflared, ngrok).
+    #: Empty means LAN mode: local IP, local certificate.
+    public_url: str = ""
     admin_pin: str = "1234"
     max_instructions: int = 14
     turn_seconds: float = 20.0
@@ -308,8 +311,19 @@ class Settings:
 
     @property
     def scheme(self) -> str:
-        """The microphone only works on a secure origin, so the banner must match."""
+        """The microphone only works on a secure origin, so the banner must match.
+
+        In tunnel mode the public URL is already https; the origin the tunnel
+        forwards to is plain http, so local TLS is off by design.
+        """
+        if self.tunnel:
+            return "http"
         return "https" if self.https_cert and self.https_key else "http"
+
+    @property
+    def tunnel(self) -> bool:
+        """True when a public URL is configured: the pages live behind a proxy."""
+        return bool(self.public_url)
 
     @property
     def ai_configured(self) -> bool:
@@ -328,6 +342,7 @@ class Settings:
             ai_base_url=_first_env("AI_BASE_URL", "DEEPSEEK_BASE_URL") or AI_BASE_URL,
             ai_model=_first_env("AI_MODEL", "DEEPSEEK_MODEL") or AI_MODEL,
             ai_json_mode=_bool_env("AI_JSON_MODE", AI_JSON_MODE),
+            public_url=os.getenv("PUBLIC_URL", "").strip().rstrip("/"),
             ai_timeout_seconds=_float_env("AI_TIMEOUT_SECONDS", 3.0),
             admin_pin=os.getenv("ADMIN_PIN", "").strip() or "1234",
             max_instructions=_int_env("MAX_INSTRUCTIONS", 14),
