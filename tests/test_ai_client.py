@@ -354,3 +354,24 @@ async def test_content_returned_as_parts_is_joined():
     await client.aclose()
     assert result is not None
     assert result.command.n == 3
+
+
+async def test_openrouter_gets_attribution_headers():
+    recorder = Recorder()
+    client = build(recorder, base="https://openrouter.ai/api/v1")
+    await client.startup()
+    await client.translate("maju 2")
+    await client.aclose()
+    headers = {k.lower(): v for k, v in recorder.requests[-1].headers.items()}
+    assert headers["x-title"] == "The Engineer-Bot"
+    assert "http-referer" in headers
+
+
+async def test_other_providers_do_not_get_openrouter_headers():
+    recorder = Recorder()
+    client = build(recorder, base="https://api.openai.com/v1")
+    await client.startup()
+    await client.translate("maju 2")
+    await client.aclose()
+    headers = {k.lower() for k in recorder.requests[-1].headers}
+    assert "x-title" not in headers

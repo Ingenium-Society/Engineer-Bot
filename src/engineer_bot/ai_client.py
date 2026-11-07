@@ -66,6 +66,10 @@ class AIClient:
             return base
         return f"{base}/chat/completions"
 
+    def _is_openrouter(self) -> bool:
+        host = urlparse(self.settings.ai_base_url).hostname or ""
+        return host.endswith("openrouter.ai")
+
     def _is_deepseek(self) -> bool:
         host = urlparse(self.settings.ai_base_url).hostname or ""
         return host.endswith("deepseek.com")
@@ -74,6 +78,11 @@ class AIClient:
         headers = {"Content-Type": "application/json"}
         if self.settings.ai_api_key:
             headers["Authorization"] = f"Bearer {self.settings.ai_api_key}"
+        if self._is_openrouter():
+            # Optional on OpenRouter, but it is how the app shows up in their
+            # dashboard, and free-tier limits are per-app.
+            headers["HTTP-Referer"] = "https://github.com/Ingenium-Society/Engineer-Bot"
+            headers["X-Title"] = "The Engineer-Bot"
         return headers
 
     async def startup(self) -> None:

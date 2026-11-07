@@ -623,7 +623,9 @@
     function render(view) {
       state = view;
       els.clock.textContent = fmtClock(view.round_seconds_left);
-      els.ai.textContent = view.ai_available ? 'aktif' : 'mati (kata kunci)';
+      els.ai.textContent = view.ai_available
+        ? 'aktif' + (view.ai_error ? ' · ' + view.ai_error : '')
+        : 'mati (belum diatur)';
       els.model.textContent = view.ai_model || '-';
 
       TEAM_IDS.forEach(function (teamId) {

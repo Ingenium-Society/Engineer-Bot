@@ -108,6 +108,7 @@ MSG_TIMEOUT = "Waktu habis."
 MSG_NOT_TAKEABLE = "Benda itu tidak bisa diambil."
 MSG_OPERATOR_REJECT = "Ditolak oleh operator."
 MSG_NO_MODEL = "Model AI tidak menjawab. Instruksi tidak dihitung, coba lagi."
+MSG_NO_KEY = "Kunci API model belum diisi. Instruksi tidak dihitung."
 
 #: Speech to text
 STT_MODES = ("browser", "server", "off")

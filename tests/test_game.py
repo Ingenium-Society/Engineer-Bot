@@ -605,3 +605,14 @@ async def test_a_dead_model_refuses_without_charging_the_team(make_game):
     assert team.notice == config.MSG_NO_MODEL
     assert game.turn == "a"
     assert team.history == []
+
+
+async def test_an_unconfigured_model_says_so(make_game):
+    game = make_game(ai=StubAI({}), auto_confirm=False)
+    game.ai.available = False  # no key for a public endpoint
+    await game.start()
+
+    await game.submit("a", "maju 2")
+
+    assert game.teams["a"].notice == config.MSG_NO_KEY
+    assert game.teams["a"].used == 0

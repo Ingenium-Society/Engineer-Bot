@@ -76,7 +76,7 @@ def banner(host: str, port: int, settings: config.Settings) -> str:
         host_name = urlparse(settings.ai_base_url).hostname or settings.ai_base_url
         lines.append(row("AI", f"{settings.ai_model} @ {host_name}"))
     else:
-        lines.append(row("AI", "mati - memakai parser kata kunci"))
+        lines.append(row("AI", "mati - kunci API belum diisi"))
     if settings.stt_mode == "off":
         lines.append(row("Suara", "mati (STT_MODE=off)"))
     else:

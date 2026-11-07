@@ -496,7 +496,8 @@ class Game:
         team.used = max(0, team.used - 1)
         team.phase = "TYPING"
         team.pending_text = None
-        team.notice = config.MSG_NO_MODEL
+        configured = self.ai is not None and getattr(self.ai, "available", False)
+        team.notice = config.MSG_NO_MODEL if configured else config.MSG_NO_KEY
         team.turn_deadline = self.clock() + self.settings.turn_seconds
         await self._notify()
 
@@ -796,6 +797,7 @@ class Game:
             "turn": self.turn,
             "ai_available": bool(self.ai is not None and getattr(self.ai, "available", False)),
             "ai_model": self.settings.ai_model if self.ai is not None else None,
+            "ai_error": getattr(self.ai, "last_error", None) if self.ai is not None else None,
             "round_seconds_left": round(self._round_left(), 1),
             "teams": {team_id: self.admin_team_view(team_id).model_dump() for team_id in TEAM_IDS},
         }

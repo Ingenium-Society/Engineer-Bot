@@ -398,11 +398,19 @@ Point `AI_BASE_URL` at whatever you run:
 | | `AI_BASE_URL` | `AI_MODEL` | key |
 |---|---|---|---|
 | DeepSeek | `https://api.deepseek.com` | `deepseek-flash` | required |
+| OpenRouter | `https://openrouter.ai/api/v1` | `google/gemma-4-26b-a4b-it:free` | required |
 | OpenAI | `https://api.openai.com/v1` | `gpt-4o-mini` | required |
 | Ollama | `http://127.0.0.1:11434/v1` | `llama3.1:8b` | not needed |
 | llama.cpp | `http://127.0.0.1:8080/v1` | whatever `-m` loaded | not needed |
 | LM Studio | `http://127.0.0.1:1234/v1` | the loaded model | not needed |
 | vLLM | `http://127.0.0.1:8000/v1` | the served name | not needed |
+
+OpenRouter's free tier is the cheapest way to run this: any model id ending in `:free` costs
+nothing, e.g. `google/gemma-4-26b-a4b-it:free`, `google/gemma-4-31b-it:free`,
+`liquid/lfm-3-1.7b:free`, or `openrouter/free` to let it pick. Two catches: free models are
+rate-limited (roughly 20 requests/minute, and a daily cap that rises once you have credit
+on the account), and not every free model honours `response_format` — if you see
+`http_400` in the admin's AI row, set `AI_JSON_MODE=false` and the prompt alone carries it.
 
 A **loopback or private address needs no key**; a public host without one counts as
 not configured and instructions are refused rather than guessed. The
