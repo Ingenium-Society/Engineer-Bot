@@ -6,7 +6,7 @@ import asyncio
 
 import pytest
 
-from conftest import FakeClock, StubAI
+from conftest import FakeClock
 from engineer_bot import config
 from engineer_bot.game import Game
 from engineer_bot.models import WorldState
@@ -503,7 +503,7 @@ async def test_the_screen_knows_the_room_is_waiting_for_a_human(make_game):
 async def test_the_operator_confirms_the_ai_reading_and_its_explanation(make_game):
     """The card shows the AI's command and why it read the sentence that way."""
 
-    class StubAI:
+    class ExplainingAI:
         available = True
         last_error = None
 
@@ -516,7 +516,7 @@ async def test_the_operator_confirms_the_ai_reading_and_its_explanation(make_gam
                 latency_ms=12.0,
             )
 
-    game = make_game(ai=StubAI(), auto_confirm=False)
+    game = make_game(ai=ExplainingAI(), auto_confirm=False)
     await game.start()
 
     task = asyncio.ensure_future(game.submit("a", "maju dua langka"))
@@ -592,27 +592,64 @@ async def test_a_timeout_draft_is_only_sent_once(make_game, clock):
     assert game.teams["a"].used == 1
 
 
-async def test_a_dead_model_refuses_without_charging_the_team(make_game):
-    """An unreachable model is our outage, not the team's mistake."""
-    game = make_game(ai=StubAI({}), auto_confirm=False)
+class SlowAI:
+    """A model that answers only when the test lets it."""
+
+    available = True
+    last_error = None
+
+    def __init__(self) -> None:
+        self.release = asyncio.Event()
+        self.cancelled = False
+
+    async def translate(self, text):
+        from engineer_bot.models import Command, TranslationResult
+
+        try:
+            await self.release.wait()
+        except asyncio.CancelledError:
+            self.cancelled = True
+            raise
+        return TranslationResult(
+            command=Command(verb="MAJU", n=2), source="ai", latency_ms=1.0
+        )
+
+
+async def test_the_sentence_reaches_the_operator_before_the_model_answers(make_game):
+    slow = SlowAI()
+    game = make_game(ai=slow, auto_confirm=False)
     await game.start()
 
-    await game.submit("a", "maju 2")
+    task = asyncio.ensure_future(game.submit("a", "maju dua langkah"))
+    await settle()
+
+    view = game.admin_view()["teams"]["a"]
+    assert view["pending"] is True
+    assert view["pending_text"] == "maju dua langkah"
+    assert view["pending_status"] is None, "the model has not answered yet"
+
+    slow.release.set()
+    await settle()
+    assert game.admin_view()["teams"]["a"]["pending_status"] == "ACCEPT"
+
+    await game.force("a", "accept")
+    await asyncio.wait_for(task, 2)
+
+
+async def test_the_operator_can_reject_without_the_model(make_game, clock):
+    """The human is not held hostage by a slow endpoint."""
+    slow = SlowAI()
+    game = make_game(ai=slow, auto_confirm=False)
+    await game.start()
+
+    task = asyncio.ensure_future(game.submit("a", "maju dua langkah"))
+    await settle()
+    await game.force("a", "reject")
+    await asyncio.wait_for(task, 2)
 
     team = game.teams["a"]
-    assert team.used == 0, "the instruction must not be counted"
-    assert team.phase == "TYPING", "the team keeps the turn"
-    assert team.notice == config.MSG_NO_MODEL
-    assert game.turn == "a"
-    assert team.history == []
+    assert team.last is not None and team.last.status == "REJECT"
+    assert team.last.message == config.MSG_OPERATOR_REJECT
+    assert slow.cancelled is True, "the model call should be dropped"
 
 
-async def test_an_unconfigured_model_says_so(make_game):
-    game = make_game(ai=StubAI({}), auto_confirm=False)
-    game.ai.available = False  # no key for a public endpoint
-    await game.start()
-
-    await game.submit("a", "maju 2")
-
-    assert game.teams["a"].notice == config.MSG_NO_KEY
-    assert game.teams["a"].used == 0

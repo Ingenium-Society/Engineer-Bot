@@ -314,9 +314,7 @@
           ? 'Giliranmu! Bicara atau ketik satu instruksi'
           : 'Giliranmu! Ketik satu instruksi';
       }
-      if (view.phase === 'JUDGING') {
-        return view.pending ? 'Menunggu juri...' : 'Memproses...';
-      }
+      if (view.phase === 'JUDGING') return 'Menunggu juri...';
       if (view.phase === 'LOCKED') {
         if (view.last && view.last.status === 'ACCEPT') {
           return 'Diterima ✔ Menunggu robot selesai';
@@ -519,10 +517,6 @@
           '<div class="cmd" data-role="last-text">Belum ada instruksi.</div>' +
           '<div class="meta" data-role="last-meta"></div>' +
         '</div>' +
-        '<div class="big-buttons">' +
-          '<button class="primary" data-action="done">Selesai</button>' +
-          '<button data-action="redo">Ulang</button>' +
-        '</div>' +
         '<div class="pending" data-role="pending" hidden>' +
           '<div class="pending-head">Menunggu konfirmasi</div>' +
           '<div class="pending-text" data-role="pending-text"></div>' +
@@ -531,8 +525,12 @@
           '<div class="pending-reason" data-role="pending-reason"></div>' +
         '</div>' +
         '<div class="force-row">' +
-          '<button data-action="force-accept">Terima</button>' +
-          '<button data-action="force-reject">Tolak</button>' +
+          '<button class="accept" data-action="force-accept">Terima</button>' +
+          '<button class="reject" data-action="force-reject">Tolak</button>' +
+        '</div>' +
+        '<div class="big-buttons">' +
+          '<button class="primary" data-action="done">Selesai</button>' +
+          '<button data-action="redo">Ulang</button>' +
         '</div>' +
         '<div class="operator-row">' +
           '<input class="operator-input" data-role="operator" maxlength="80" ' +
@@ -575,10 +573,16 @@
       // Only offer the buttons that can actually do something right now.
       var locked = team.phase === 'LOCKED' && !team.round_over;
       var pending = team.pending_text != null;
+      // The sentence arrives before the model's reading does.
+      var ready = team.pending_status != null;
       root.querySelector('[data-action="done"]').disabled = !locked;
       root.querySelector('[data-action="redo"]').disabled = !locked;
+      // Both buttons work as soon as there is a sentence: a dead model must
+      // not stop the operator from moving the round on.
       root.querySelector('[data-action="force-accept"]').disabled = !pending;
       root.querySelector('[data-action="force-reject"]').disabled = !pending;
+      // Two dead buttons on an idle card are just clutter.
+      root.querySelector('.force-row').hidden = !pending;
 
       // Show what the judge proposes, not just that something is waiting.
       root.classList.toggle('awaiting', pending);
@@ -590,11 +594,16 @@
           'pending-text',
           team.pending_text ? '"' + team.pending_text + '"' : ''
         );
-        var accept = team.pending_status === 'ACCEPT';
         var verdict = root.querySelector('[data-role="pending-verdict"]');
-        verdict.className = 'pending-verdict ' + (accept ? 'accept' : 'reject');
-        verdict.textContent =
-          (accept ? 'TERIMA' : 'TOLAK') + ' · ' + (team.pending_message || '');
+        if (!ready) {
+          verdict.className = 'pending-verdict notice';
+          verdict.textContent = team.pending_error || 'AI sedang membaca…';
+        } else {
+          var accept = team.pending_status === 'ACCEPT';
+          verdict.className = 'pending-verdict ' + (accept ? 'accept' : 'reject');
+          verdict.textContent =
+            (accept ? 'TERIMA' : 'TOLAK') + ' · ' + (team.pending_message || '');
+        }
         setText(
           root,
           'pending-cmd',
@@ -619,7 +628,13 @@
       root.querySelector('[data-action="operator-send"]').disabled = !canType;
 
       var last = team.last;
-      setText(root, 'last-text', last ? last.text || '(kosong)' : 'Belum ada instruksi.');
+      // An empty "last instruction" box next to a pending sentence is noise.
+      root.querySelector('.last-box').hidden = !last && pending;
+      setText(
+        root,
+        'last-text',
+        last ? last.text || '(kosong)' : (pending ? '' : 'Belum ada instruksi.')
+      );
       var meta = [];
       if (last) meta.push(last.status + ' · ' + last.message);
       if (team.source) meta.push('sumber: ' + team.source);
@@ -810,13 +825,13 @@
       });
     }
 
-    function paintProcessing(waitingForHuman) {
+    function paintProcessing() {
       setStage(
         'processing',
         view.turn ? 'GILIRAN ' + label(view.turn) : 'MEMPROSES',
         '',
-        waitingForHuman ? 'MENUNGGU JURI…' : 'MEMPROSES…',
-        waitingForHuman ? 'Juri memeriksa instruksi' : 'Robot sedang memeriksa instruksi',
+        'MENUNGGU JURI…',
+        view.pending_text ? '"' + view.pending_text + '"' : 'Juri memeriksa instruksi',
         ''
       );
     }
@@ -907,7 +922,7 @@
         var waited = processingAt ? now - processingAt : MIN_PROCESSING_MS;
         if (waited < MIN_PROCESSING_MS) {
           if (!processingAt) processingAt = now;
-          paintProcessing(view.pending);
+          paintProcessing();
           setTimeout(paint, MIN_PROCESSING_MS - waited + 20);
           return;
         }
@@ -917,7 +932,7 @@
 
       if (view.turn_phase === 'JUDGING') {
         if (!processingAt) processingAt = now;
-        paintProcessing(view.pending);
+        paintProcessing();
         return;
       }
       processingAt = 0;

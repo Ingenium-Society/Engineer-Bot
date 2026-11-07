@@ -107,8 +107,11 @@ MSG_TOO_LONG = "Terlalu panjang."
 MSG_TIMEOUT = "Waktu habis."
 MSG_NOT_TAKEABLE = "Benda itu tidak bisa diambil."
 MSG_OPERATOR_REJECT = "Ditolak oleh operator."
-MSG_NO_MODEL = "Model AI tidak menjawab. Instruksi tidak dihitung, coba lagi."
-MSG_NO_KEY = "Kunci API model belum diisi. Instruksi tidak dihitung."
+MSG_NO_MODEL = "AI tidak menjawab. Putuskan sendiri."
+MSG_NO_KEY = "Kunci API belum diisi. Putuskan sendiri."
+MSG_BAD_KEY = "Kunci API ditolak (401). Putuskan sendiri."
+MSG_RATE_LIMIT = "Batas laju model (429). Putuskan sendiri."
+MSG_OPERATOR_ACCEPT = "Diterima oleh juri."
 
 #: Speech to text
 STT_MODES = ("browser", "server", "off")

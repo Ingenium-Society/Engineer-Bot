@@ -61,10 +61,15 @@ class AIClient:
         return self.settings.ai_configured
 
     def _endpoint(self) -> str:
-        base = self.settings.ai_base_url.rstrip("/")
+        # A trailing slash or dot is an easy typo and would 404 the endpoint.
+        base = self.settings.ai_base_url.rstrip("/.")
         if base.endswith("/chat/completions"):
             return base
         return f"{base}/chat/completions"
+
+    def _is_groq(self) -> bool:
+        host = urlparse(self.settings.ai_base_url).hostname or ""
+        return host.endswith("groq.com")
 
     def _is_openrouter(self) -> bool:
         host = urlparse(self.settings.ai_base_url).hostname or ""
@@ -115,6 +120,9 @@ class AIClient:
     # -- translation -------------------------------------------------------
 
     def _payload(self, text: str) -> dict:
+        # A reasoning model needs room to think *and* answer; everything else
+        # gets a short leash so a chatty model cannot burn the timeout.
+        reasoning = self._is_groq()
         payload: dict = {
             "model": self.settings.ai_model,
             "messages": [
@@ -122,9 +130,12 @@ class AIClient:
                 {"role": "user", "content": config.USER_PROMPT_TEMPLATE.format(text=text)},
             ],
             "temperature": 0,
-            "max_tokens": 80,
+            "max_tokens": 200 if reasoning else 80,
             "stream": False,
         }
+        if reasoning:
+            # Groq's gpt-oss models reason by default; "low" keeps it to a line.
+            payload["reasoning_effort"] = "low"
         if self.settings.ai_json_mode:
             payload["response_format"] = {"type": "json_object"}
         # DeepSeek thinks by default, which blows the 3 s budget. Only send the

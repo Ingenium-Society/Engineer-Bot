@@ -188,6 +188,8 @@ class AdminTeamView(TeamView):
     pending_message: str | None = None
     pending_command: str | None = None
     pending_reason: str | None = None
+    #: Why there is no proposal, when the model could not answer.
+    pending_error: str | None = None
     stt_status: SttStatus | None = None
     stt_engine: str | None = None
     last_raw: str | None = None

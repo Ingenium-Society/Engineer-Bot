@@ -68,11 +68,19 @@ class Submission:
 
 @dataclass
 class Pending:
-    """A verdict the judge proposed and the operator has not confirmed yet."""
+    """One instruction, from submission to the operator's decision.
+
+    Created the moment the player submits, so the operator sees the sentence
+    immediately. The proposal fills in when the model answers — or never, if the
+    operator decides first.
+    """
 
     text: str
-    command: Command | None
-    proposed: JudgeResult
+    command: Command | None = None
+    #: None until the model has read the sentence.
+    proposed: JudgeResult | None = None
+    #: Why there is no reading, when the model could not answer.
+    error: str | None = None
     event: asyncio.Event = field(default_factory=asyncio.Event)
     decision: str | None = None
 
@@ -387,6 +395,8 @@ class Game:
             exact = raw if raw is not None else text
             team.last_raw = exact
             team.stt_ms = stt_ms
+            # Show the sentence to the operator now, not after the model answers.
+            team.pending = Pending(text=exact)
             await self._notify()
             await self._judge_and_apply(team, text, generation, source, exact, stt_ms)
 
@@ -444,62 +454,119 @@ class Game:
             result = JudgeResult(status="REJECT", message=error, state=team.state)
         else:
             assert clean is not None
-            translation = await judge.translate(clean, ai=self.ai)
-            if translation is None:
-                await self._refuse(team, generation)
-                return
-            result = judge.validate(
-                translation.command,
-                team.state,
-                filter_seconds=self.settings.filter_seconds,
-            )
-
-            if team.forced in ("accept", "reject"):
-                decision = team.forced
-                team.forced = None
-                # A forced accept cannot invent a legal state transition, so an
-                # invalid command stays rejected even when the operator insists.
-                if decision == "accept" and result.status == "ACCEPT":
-                    result = JudgeResult(
-                        status="ACCEPT",
-                        message=result.message,
-                        state=result.state,
-                        command=result.command,
-                    )
-                else:
-                    result = JudgeResult(
-                        status="REJECT",
-                        message=(
-                            result.message
-                            if result.status == "REJECT"
-                            else config.MSG_OPERATOR_REJECT
-                        ),
-                        state=team.state,
-                        command=result.command,
-                    )
+            pending = team.pending
+            task = asyncio.ensure_future(judge.translate(clean, ai=self.ai))
+            if pending is None:
+                translation = await task
             else:
-                # Always: the judge proposes, a human accepts. No mode, no switch.
-                result = await self._await_operator(team, text, translation, result)
+                decided = asyncio.ensure_future(pending.event.wait())
+                done, _ = await asyncio.wait({task, decided}, return_when=asyncio.FIRST_COMPLETED)
+                if decided in done and task not in done:
+                    # A human decided before the model finished: the model's
+                    # opinion is not needed and the call is dropped.
+                    task.cancel()
+                    accepted = pending.decision == "accept"
+                    team.pending = None
+                    await self._apply(
+                        team,
+                        JudgeResult(
+                            status="ACCEPT" if accepted else "REJECT",
+                            message=(
+                                config.MSG_OPERATOR_ACCEPT
+                                if accepted
+                                else config.MSG_OPERATOR_REJECT
+                            ),
+                            state=team.state,
+                        ),
+                        text,
+                        None,
+                        generation,
+                        source,
+                        raw,
+                        stt_ms,
+                    )
+                    return
+                decided.cancel()
+                translation = await task
+            if translation is None:
+                result = await self._await_human_only(team, text)
+            else:
+                result = judge.validate(
+                    translation.command,
+                    team.state,
+                    filter_seconds=self.settings.filter_seconds,
+                )
+
+                if team.forced in ("accept", "reject"):
+                    decision = team.forced
+                    team.forced = None
+                    # A forced accept cannot invent a legal state transition, so an
+                    # invalid command stays rejected even when the operator insists.
+                    if decision == "accept" and result.status == "ACCEPT":
+                        result = JudgeResult(
+                            status="ACCEPT",
+                            message=result.message,
+                            state=result.state,
+                            command=result.command,
+                        )
+                    else:
+                        result = JudgeResult(
+                            status="REJECT",
+                            message=(
+                                result.message
+                                if result.status == "REJECT"
+                                else config.MSG_OPERATOR_REJECT
+                            ),
+                            state=team.state,
+                            command=result.command,
+                        )
+                else:
+                    # Always: the judge proposes, a human accepts. No mode, no switch.
+                    result = await self._await_operator(team, text, translation, result)
 
         if team.generation != generation:
             return
         await self._apply(team, result, text, translation, generation, source, raw, stt_ms)
 
-    async def _refuse(self, team: TeamState, generation: int) -> None:
-        """Nobody could read the sentence: hand the turn back, uncharged.
+    def _no_reading_message(self) -> str:
+        """Why the model gave nothing, in words the operator can act on."""
+        if self.ai is None or not getattr(self.ai, "available", False):
+            return config.MSG_NO_KEY
+        error = str(getattr(self.ai, "last_error", "") or "")
+        if error.startswith("http_401"):
+            return config.MSG_BAD_KEY
+        if error.startswith("http_429"):
+            return config.MSG_RATE_LIMIT
+        return config.MSG_NO_MODEL
 
-        An unreachable model is our outage, not the team's mistake, so the
-        instruction is not counted and the round does not move on.
+    async def _await_human_only(self, team: TeamState, exact: str) -> JudgeResult:
+        """No reading: the operator decides alone, and the game moves on.
+
+        An accept here changes no board state — there is no parsed command to
+        apply — but the instruction counts and the turn passes, so a dead model
+        cannot stall the round.
         """
-        if team.generation != generation:
-            return
-        team.used = max(0, team.used - 1)
-        team.phase = "TYPING"
-        team.pending_text = None
-        configured = self.ai is not None and getattr(self.ai, "available", False)
-        team.notice = config.MSG_NO_MODEL if configured else config.MSG_NO_KEY
-        team.turn_deadline = self.clock() + self.settings.turn_seconds
+        pending = team.pending or Pending(text=exact)
+        pending.text = exact
+        pending.error = self._no_reading_message()
+        team.pending = pending
         await self._notify()
+
+        if self.confirm is not None:
+            decision = await self.confirm(pending)
+            if decision in ("accept", "reject"):
+                pending.decision = decision
+                pending.event.set()
+        await pending.event.wait()
+        team.pending = None
+
+        if pending.decision == "accept":
+            return JudgeResult(
+                status="ACCEPT", message=config.MSG_OPERATOR_ACCEPT, state=team.state
+            )
+        return JudgeResult(
+            status="REJECT", message=config.MSG_OPERATOR_REJECT, state=team.state
+        )
 
     async def _await_operator(
         self,
@@ -515,8 +582,11 @@ class Game:
         answers immediately.
         """
         # The operator judges the sentence the player actually wrote, not the
-        # sanitised one.
-        pending = Pending(text=exact, command=translation.command, proposed=proposed)
+        # sanitised one. The pending already exists: fill in the reading.
+        pending = team.pending or Pending(text=exact)
+        pending.text = exact
+        pending.command = translation.command
+        pending.proposed = proposed
         team.pending = pending
         await self._notify()
         if self.confirm is not None:
@@ -767,12 +837,23 @@ class Game:
             fallback_used=team.fallback_used,
             locked_seconds=round(locked_seconds, 1),
             pending_text=team.pending.text if team.pending is not None else None,
-            pending_status=team.pending.proposed.status if team.pending is not None else None,
-            pending_message=team.pending.proposed.message if team.pending is not None else None,
+            pending_status=(
+                team.pending.proposed.status
+                if team.pending is not None and team.pending.proposed is not None
+                else None
+            ),
+            pending_message=(
+                team.pending.proposed.message
+                if team.pending is not None and team.pending.proposed is not None
+                else None
+            ),
             pending_command=(
                 team.pending.command.summary
                 if team.pending is not None and team.pending.command is not None
                 else None
+            ),
+            pending_error=(
+                team.pending.error if team.pending is not None else None
             ),
             pending_reason=(
                 team.pending.command.alasan
@@ -818,6 +899,7 @@ class Game:
             "turn_seconds_left": round(self._turn_left(active), 1) if active else 0.0,
             "draft": active.draft if active else "",
             "pending": bool(active and active.pending is not None),
+            "pending_text": active.pending.text if active and active.pending else None,
             "seq": self.seq,
             "last": self.last_event,
             "teams": {
