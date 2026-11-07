@@ -764,28 +764,6 @@
       overlaySub: $('#overlay-sub')
     };
 
-    // Sounds come from the projector's speakers, not the team laptops.
-    var sfx = window.EngineerBotSfx ? window.EngineerBotSfx.create() : null;
-    var sfxButton = document.getElementById('sfx-toggle');
-
-    function paintSfxButton() {
-      if (!sfxButton || !sfx) return;
-      var muted = sfx.isMuted();
-      sfxButton.textContent = muted ? 'Suara mati' : 'Suara';
-      sfxButton.className = 'sfx-toggle' + (muted ? ' off' : '');
-    }
-
-    if (sfxButton && sfx) {
-      paintSfxButton();
-      sfxButton.addEventListener('click', function () {
-        sfx.toggle();
-        paintSfxButton();
-      });
-      // One gesture anywhere unlocks the audio context for the whole round.
-      document.addEventListener('pointerdown', function () { sfx.unlock(); });
-      document.addEventListener('keydown', function () { sfx.unlock(); });
-    }
-
     var view = null;
     var shownSeq = -1;
     var processingAt = 0;
@@ -881,9 +859,9 @@
       verdictUntil = Date.now() + VERDICT_HOLD_MS;
 
       var accepted = last.status === 'ACCEPT';
-      if (sfx) {
-        if (accepted) sfx.accept();
-        else sfx.reject();
+      if (window.EngineerBotSound) {
+        if (accepted) window.EngineerBotSound.accept();
+        else window.EngineerBotSound.reject();
       }
       setStage(
         accepted ? 'accept' : 'reject',

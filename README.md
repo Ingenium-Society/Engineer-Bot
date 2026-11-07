@@ -105,10 +105,16 @@ The server machine is the screen. There is no display laptop and no hardware to 
 2. **Open the screen in its own window**, with no tabs and no address bar:
 
    ```bash
-   open -na "Google Chrome" --args --app=http://localhost:8000/screen
+   open -na "Google Chrome" --args --app=http://localhost:8000/screen \
+     --autoplay-policy=no-user-gesture-required
    ```
 
    Any Chromium works — substitute `Thorium`, `Microsoft Edge`, `Brave` for the app name.
+   **The autoplay flag matters:** the projector plays a short chime when an instruction is
+   accepted and a duller two-note fall when it is rejected, and Chrome keeps audio silent
+   until the page has seen a click. Without the flag a kiosk tab that is only ever looked
+   at stays mute. Clicking the screen once also unlocks it, if you would rather not pass
+   the flag.
    Drag the window to the projector, then **⌃⌘F** to fill the display. (On Windows it is
    F11; on macOS F11 is *Show Desktop*, not fullscreen.)
 3. **Open the operator page** in a normal window on the laptop's own display:
@@ -118,7 +124,9 @@ The server machine is the screen. There is no display laptop and no hardware to 
    on the machine that matters. The team laptops still use the LAN URL from the banner.
 
 The screen window never needs focus: it is read-only, needs no PIN, and cannot submit
-anything. It reconnects on its own and shows the current state rather than replaying the
+anything. It is also the only page that makes noise — the verdict sounds are synthesised
+in the browser (`static/audio.js`), so there are no audio files to copy to the venue
+machine and nothing to load over the network. It reconnects on its own and shows the current state rather than replaying the
 last verdict, so a reload mid-game is safe. The operator's `A` / `L` shortcuts work while
 the admin window has focus, which it will, since that is the only window being clicked.
 
@@ -543,7 +551,6 @@ laptops, once, before the day.
 | Every instruction is refused, *Model AI tidak menjawab* | the endpoint is down or the key is wrong; check the AI row and the latency dot |
 | `ADMIN_PIN` rejected | PIN is read at startup; restart after editing `.env` |
 | Projector shows nothing | the page is not on `/screen`, or the laptop mirrored instead of extended |
-| No sound on a verdict | the browser blocks audio until the projector page gets a click — click once anywhere on it at setup. The faint **SUARA** button bottom-right toggles it |
 | Projector frozen on the last verdict | the socket dropped — reload; it reconnects and shows the current state |
 | Team page says *Menyambung ulang…* | the WebSocket is down; the page retries every second, nothing else needs doing |
 | `wss://…` fails with *bad response from the server* through a tunnel | cloudflared is forwarding to `http://localhost:8000` but the app is serving https — it was started without `PUBLIC_URL`. Restart the app with it set, then hard-reload the page: a cached page hides the mismatch until the socket fails |
