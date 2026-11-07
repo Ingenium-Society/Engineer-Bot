@@ -4,92 +4,7 @@ from __future__ import annotations
 
 import asyncio
 
-import pytest
-
-from engineer_bot import config, judge
-from engineer_bot.keyword_parser import parse_keyword
-from engineer_bot.models import Verb, WorldState
-
-# Transcripts as a speech engine actually returns them: no punctuation, fillers
-# everywhere, the odd misheard word.
-SPEECH_VALID = [
-    ("eh maju dua langkah", Verb.MAJU, {"n": 2}),
-    ("hmm maju 3", Verb.MAJU, {"n": 3}),
-    ("oke ya maju tiga", Verb.MAJU, {"n": 3}),
-    ("maju dua langka", Verb.MAJU, {"n": 2}),
-    ("jalan kedepan dua", Verb.MAJU, {"n": 2}),
-    ("mundur satu langkah", Verb.MUNDUR, {"n": 1}),
-    ("maju dua belas", Verb.MAJU, {"n": 12}),
-    ("eh belok kekiri 90", Verb.BELOK, {"arah": "KIRI", "n": 90}),
-    ("belok ke kanan sembilan puluh", Verb.BELOK, {"arah": "KANAN", "n": 90}),
-    ("belok kanan sembilan puluh derajat", Verb.BELOK, {"arah": "KANAN", "n": 90}),
-    ("nah ambil gelas nya", Verb.AMBIL, {"objek": "gelas"}),
-    ("ambil gelasnya", Verb.AMBIL, {"objek": "gelas"}),
-    ("ambilkan gelas", Verb.AMBIL, {"objek": "gelas"}),
-    ("ya ambil toplesnya", Verb.AMBIL, {"objek": "toples"}),
-    ("tuang gelas ke corong", Verb.TUANG, {"objek": "gelas", "target": "corong"}),
-    ("tuangkan gelasnya ke saringan", Verb.TUANG, {"objek": "gelas", "target": "corong"}),
-    ("tunggu sepuluh detik", Verb.TUNGGU, {"n": 10}),
-    ("anu tunggu tiga puluh detik", Verb.TUNGGU, {"n": 30}),
-    ("tambah tablet ke toples", Verb.TAMBAH, {"objek": "tablet", "target": "toples"}),
-    ("masukkan tabletnya ke botol", Verb.TAMBAH, {"objek": "tablet", "target": "toples"}),
-    ("aduk pakai sendok", Verb.ADUK, {"objek": "sendok"}),
-    ("aduuk dengan sendok", Verb.ADUK, {"objek": "sendok"}),
-    ("taruh toplesnya di area finis", Verb.TARUH, {"objek": "toples", "target": "finish"}),
-    ("letakkan toples di garis finis", Verb.TARUH, {"objek": "toples", "target": "finish"}),
-    ("oke maju 2 langkah", Verb.MAJU, {"n": 2}),
-    ("maju dua langkah ya", Verb.MAJU, {"n": 2}),
-]
-
-
-@pytest.mark.parametrize(("text", "verb", "fields"), SPEECH_VALID)
-def test_speech_transcripts_parse(text, verb, fields):
-    command = parse_keyword(text)
-    assert command.verb is verb, f"{text!r} -> {command.verb}"
-    for key, value in fields.items():
-        assert getattr(command, key) == value, f"{text!r} field {key}"
-
-
-# Incomplete speech must stay incomplete: a missing number, direction or object
-# is never guessed, however noisy the sentence is.
-SPEECH_INCOMPLETE = [
-    "maju",
-    "eh maju",
-    "hmm maju ya",
-    "belok",
-    "hmm belok kanan",
-    "ambil",
-    "eh ambil",
-    "tuang gelas",
-    "tuang ke corong",
-    "tambah tablet",
-    "taruh toples",
-    "aduk",
-]
-
-
-@pytest.mark.parametrize("text", SPEECH_INCOMPLETE)
-def test_speech_never_guesses_missing_fields(text):
-    result = judge.validate(parse_keyword(text), WorldState())
-    assert result.status == "REJECT"
-
-
-def test_missing_step_count_still_asks_for_one():
-    assert judge.validate(parse_keyword("eh maju"), WorldState()).message == config.MSG_NEED_STEPS
-
-
-def test_missing_object_still_asks_for_one():
-    result = judge.validate(parse_keyword("ambil"), WorldState())
-    assert result.message == config.MSG_NEED_DIRECTION
-
-
-@pytest.mark.parametrize("text", ["tolong dong", "eh hmm ya", "oke oke oke", "anu"])
-def test_filler_only_is_not_a_command(text):
-    assert parse_keyword(text).verb is Verb.INVALID
-
-
-def test_truly_empty_text_is_empty_not_unknown():
-    assert parse_keyword("").alasan == config.MSG_EMPTY
+from engineer_bot import config
 
 
 def test_system_prompt_covers_speech():
@@ -104,7 +19,6 @@ def test_stt_defaults():
     settings = config.Settings()
     assert settings.stt_mode == "browser"
     assert settings.stt_lang == "id-ID"
-    assert settings.auto_submit_delay_ms == 2000
     assert settings.whisper_model == "base"
     assert settings.scheme == "http"
 
@@ -155,7 +69,9 @@ async def test_keyboard_submission_needs_no_extra_fields(make_game):
     await game.submit("a", "maju 2")
     record = game.teams["a"].records[-1]
     assert record.input_source == "keyboard"
-    assert record.raw is None
+    # Typed input keeps its exact text too: the operator judges the sentence,
+    # not the sanitised version of it.
+    assert record.raw == "maju 2"
     assert record.stt_ms is None
 
 
@@ -246,10 +162,9 @@ async def test_stt_status_rejects_unknown_values(make_game):
 
 
 async def test_team_view_carries_the_stt_configuration(make_game):
-    game = make_game(stt_mode="off", auto_submit_delay_ms=1500)
+    game = make_game(stt_mode="off")
     view = game.team_view("a")
     assert view.stt_mode == "off"
-    assert view.auto_submit_ms == 1500
     assert view.stt_lang == "id-ID"
 
 

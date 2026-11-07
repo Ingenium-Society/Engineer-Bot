@@ -167,17 +167,16 @@ async def test_missing_key_means_no_call():
 # ------------------------------------------------------------------ fallback
 
 
-async def test_judge_falls_back_to_keyword_when_the_ai_fails():
+async def test_a_failed_call_returns_nothing_rather_than_guessing():
+    """No rule-based fallback: the caller refuses the turn instead."""
     recorder = Recorder([httpx.ReadTimeout("too slow")])
     client = build(recorder)
     await client.startup()
     result = await judge.translate("maju dua langkah", ai=client)
     await client.aclose()
 
-    assert result.source == "keyword"
-    assert result.command.verb is Verb.MAJU
-    assert result.command.n == 2
-    assert result.error == "timeout"
+    assert result is None
+    assert client.last_error == "timeout"
 
 
 async def test_judge_uses_the_ai_when_it_works():
@@ -189,20 +188,18 @@ async def test_judge_uses_the_ai_when_it_works():
     assert result.source == "ai"
 
 
-async def test_without_a_client_the_parser_answers_and_no_request_is_made():
+async def test_without_a_client_nothing_is_read_and_no_request_is_made():
     recorder = Recorder()
     client = build(recorder)
     await client.startup()
     result = await judge.translate("maju dua langkah", ai=None)
     await client.aclose()
-    assert result.source == "keyword"
+    assert result is None
     assert recorder.calls == []
 
 
-async def test_no_client_means_keyword():
-    result = await judge.translate("maju dua langkah", ai=None)
-    assert result.source == "keyword"
-    assert result.command.verb is Verb.MAJU
+async def test_no_client_means_no_reading():
+    assert await judge.translate("maju dua langkah", ai=None) is None
 
 
 # ----------------------------------------------------------------- sanitize

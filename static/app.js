@@ -85,7 +85,6 @@
       mic: $('#mic'),
       voice: $('#voice'),
       voiceLine: $('#voice-line'),
-      voiceBar: $('#voice-bar'),
       hint: $('#hint'),
       history: $('#history'),
       round: $('#round-clock'),
@@ -94,7 +93,6 @@
       bannerText: $('#banner-text'),
       tts: $('#tts')
     };
-    var voiceBarWrap = els.voiceBar.parentNode;
 
     els.name.textContent = teamId === 'a' ? 'TIM A' : 'TIM B';
     document.title = els.name.textContent + ' · The Engineer-Bot';
@@ -164,81 +162,36 @@
         els.voiceLine.appendChild(document.createTextNode(' · '));
         els.voiceLine.appendChild(again);
       }
-      voiceBarWrap.hidden = !options.bar;
-      if (!options.bar) els.voiceBar.style.width = '100%';
     }
 
     function hideVoice() {
       els.voice.hidden = true;
       els.voiceLine.textContent = '';
-      voiceBarWrap.hidden = true;
     }
 
-    function clearCountdown() {
-      if (voice.timer) {
-        clearInterval(voice.timer);
-        voice.timer = null;
-      }
-      voiceBarWrap.hidden = true;
-      els.voiceBar.style.width = '100%';
-    }
-
-    /* Fill the box, show what was heard, and count down to sending it. */
-    function startCountdown() {
-      var delay = Math.max(500, voice.delayMs || 2000);
-      var deadline = Date.now() + delay;
-      clearCountdown();
+    // The transcript is typed into the box, never sent on its own: the player
+    // reads it, fixes what the engine misheard, then presses Kirim.
+    function showTranscript() {
       els.voice.hidden = false;
       els.voiceLine.className = 'voice-line live';
       els.voiceLine.textContent = '';
       els.voiceLine.appendChild(
-        document.createTextNode('Kamu bilang: "' + voice.raw + '" · Terkirim dalam ')
+        document.createTextNode('Kamu bilang: "' + voice.raw + '" · ')
       );
-      var seconds = document.createElement('span');
-      seconds.textContent = String(Math.ceil(delay / 1000));
-      els.voiceLine.appendChild(seconds);
-      els.voiceLine.appendChild(document.createTextNode(' detik · '));
       var again = document.createElement('button');
       again.type = 'button';
       again.className = 'link';
       again.textContent = 'Ulangi';
       again.addEventListener('click', startListening);
       els.voiceLine.appendChild(again);
-      voiceBarWrap.hidden = false;
-
-      var tick = function () {
-        var left = Math.max(0, deadline - Date.now());
-        seconds.textContent = String(Math.ceil(left / 1000));
-        els.voiceBar.style.width = Math.round((left / delay) * 100) + '%';
-        if (left <= 0) {
-          clearCountdown();
-          submitVoice();
-        }
-      };
-      tick();
-      voice.timer = setInterval(tick, 100);
-    }
-
-    function submitVoice() {
-      var text = els.input.value.trim();
-      if (!text || !canSubmit()) return;
-      var payload = { type: 'submit', text: text, source: 'voice' };
-      if (voice.raw) payload.raw = voice.raw;
-      if (voice.sttMs !== null && voice.sttMs !== undefined) payload.stt_ms = voice.sttMs;
-      link.send(payload);
-      pushDraft('');
-      clearCountdown();
-      hideVoice();
-      els.input.value = '';
-      els.input.disabled = true;
-      els.send.disabled = true;
-      els.status.textContent = 'Memproses...';
-      els.status.className = 'status-line';
+      els.voiceLine.appendChild(
+        document.createTextNode(' · periksa lalu tekan Kirim')
+      );
     }
 
     function startListening() {
       if (!voice.usable || !voice.engine || voice.listening || !canSubmit()) return;
-      clearCountdown();
+      hideVoice();
       // Never listen while the robot is speaking.
       if (window.speechSynthesis && window.speechSynthesis.speaking) {
         window.speechSynthesis.cancel();
@@ -264,7 +217,6 @@
     }
 
     function setupVoice(view) {
-      voice.delayMs = view.auto_submit_ms || 2000;
       var mode = view.stt_mode || 'off';
       if (mode === voice.mode && voice.ready) return;
       voice.mode = mode;
@@ -282,6 +234,8 @@
         voice.engine = window.EngineerBotVoice.create(mode, {
           lang: view.stt_lang || 'id-ID',
           team: teamId,
+          tailMs: 700,
+          maxMs: 6000,
           onStart: function () {
             voice.listening = true;
             els.mic.classList.add('listening');
@@ -301,7 +255,7 @@
             els.input.value = text;
             pushDraft(text);
             els.input.focus();
-            startCountdown();
+            showTranscript();
           },
           onEmpty: function () {
             voice.listening = false;
@@ -344,6 +298,7 @@
         return view.winner === teamId ? 'Tim kami menang!' : 'Ronde selesai';
       }
       if (view.paused) return 'Ronde dijeda';
+      if (view.notice) return view.notice;
       if (view.phase === 'IDLE') return 'Menunggu ronde dimulai';
       if (view.phase === 'WAITING') {
         return view.turn ? 'Menunggu giliran ' + teamLabel(view.turn) : 'Menunggu giliran';
@@ -430,7 +385,6 @@
         stopListening();
         hideVoice();
       }
-      if (!editable) clearCountdown();
       if (editable && !wasTyping) {
         els.input.focus();
       }
@@ -451,12 +405,18 @@
 
     els.form.addEventListener('submit', function (event) {
       event.preventDefault();
-      clearCountdown();
       hideVoice();
       if (voice.listening) stopListening();
       var text = els.input.value.trim();
       if (!text || !state || state.phase !== 'TYPING') return;
-      link.send({ type: 'submit', text: text });
+      var payload = { type: 'submit', text: text };
+      if (voice.raw) {
+        // Keep what the microphone heard, even if the player edited it after.
+        payload.raw = voice.raw;
+        if (voice.sttMs !== null && voice.sttMs !== undefined) payload.stt_ms = voice.sttMs;
+        if (text === voice.raw.trim()) payload.source = 'voice';
+      }
+      link.send(payload);
       pushDraft('');
       els.input.value = '';
       els.input.disabled = true;
@@ -480,13 +440,8 @@
       }, 120);
     }
 
-    // Typing cancels the auto-submit so the player can fix a mishearing.
     els.input.addEventListener('input', function () {
       pushDraft(els.input.value);
-      if (voice.timer) {
-        clearCountdown();
-        hideVoice();
-      }
     });
 
     // Space starts listening whenever the text box does not have focus.
@@ -550,7 +505,7 @@
         '<div class="stat-row stt-row">' +
           '<span>Suara <b data-role="stt">-</b></span>' +
           '<span>Mesin <b data-role="engine">-</b></span>' +
-          '<span>Dengar <b data-role="raw">-</b></span>' +
+          '<span>Teks <b data-role="raw">-</b></span>' +
         '</div>' +
         '<div class="last-box">' +
           '<div class="cmd" data-role="last-text">Belum ada instruksi.</div>' +
@@ -562,6 +517,7 @@
         '</div>' +
         '<div class="pending" data-role="pending" hidden>' +
           '<div class="pending-head">Menunggu konfirmasi</div>' +
+          '<div class="pending-text" data-role="pending-text"></div>' +
           '<div class="pending-verdict" data-role="pending-verdict"></div>' +
           '<div class="pending-cmd" data-role="pending-cmd"></div>' +
           '<div class="pending-reason" data-role="pending-reason"></div>' +
@@ -621,6 +577,11 @@
       var box = root.querySelector('[data-role="pending"]');
       box.hidden = !pending;
       if (pending) {
+        setText(
+          root,
+          'pending-text',
+          team.pending_text ? '"' + team.pending_text + '"' : ''
+        );
         var accept = team.pending_status === 'ACCEPT';
         var verdict = root.querySelector('[data-role="pending-verdict"]');
         verdict.className = 'pending-verdict ' + (accept ? 'accept' : 'reject');

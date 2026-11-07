@@ -226,7 +226,7 @@ per-laptop flag and the browser nags about it — use it as the backup, not the 
 | Each turn | the team on turn types or speaks → the judge proposes a verdict → **you confirm it** |
 | Confirmed | the robot acts, then press **Selesai** — the floor moves to the other team |
 | Wrong move | press **Ulang** — the state reverts, the instruction still counts, the turn passes |
-| Nobody types in 20 s | the server rejects with *Waktu habis.* and passes the turn on its own |
+| Nobody presses Kirim in 20 s | whatever is in the box is submitted automatically; an empty box is rejected with *Waktu habis.* |
 | A team is stuck on screen | the column turns red after 30 s in LOCKED |
 | Shortcuts | `A` / `L` = Selesai for team A / B, `Shift` + same key = Ulang (editable on the page) |
 
@@ -260,14 +260,13 @@ you whether `maju dua langka` really meant two steps.
 - The 20 s turn clock stops while you decide; the 330 s round clock does not. Confirm
   briskly.
 
-When the model is unreachable the keyword parser answers instead and the explanation line
-is empty — same flow, less context. The `AI` row on the admin page tells you which one you
-are getting.
+When the model cannot answer there is no verdict at all: the instruction is **refused, not
+counted**, the player sees *Model AI tidak menjawab* and tries again. Nothing is guessed by
+rules — a verdict comes from the model or from you, never from a keyword table.
 
 ### Measuring AI latency at the venue
 
-The admin page shows the last DeepSeek latency and turns the dot red when the keyword
-fallback was used. For a number you can quote in the report:
+The admin page shows the last model latency and turns the dot red when a call failed. For a number you can quote in the report:
 
 ```bash
 # ten real translations, median and max
@@ -296,12 +295,12 @@ would hear all of them.
 ```
 press mic → Mendengarkan... (+ live interim text)
           → the transcript fills the text box
-          → Kamu bilang: "…" · Terkirim dalam 2 detik · Ulangi   [countdown bar]
-          → auto-submit after AUTO_SUBMIT_DELAY_MS
+          → Kamu bilang: "…" · Ulangi · periksa lalu tekan Kirim
 ```
 
-Any keystroke cancels the countdown so the player can fix a mishearing; **Enter** or
-**Kirim** sends immediately; **Ulangi** records again. The 20 s turn timer keeps running
+The transcript is typed into the box and **nothing is sent until the player presses
+Kirim**. It is ordinary text from that moment: edit it, delete it, retype it. **Ulangi**
+records again. If the clock runs out first, whatever is in the box is submitted for them. The 20 s turn timer keeps running
 throughout, and the first submission that reaches the server ends the turn — typed or
 spoken.
 
@@ -380,7 +379,7 @@ If you have a faster machine, `small` is still worth one timing run: switch with
 | `AI_MODEL` | `deepseek-flash` | whatever that server calls the model |
 | `AI_API_KEY` | *(empty)* | optional for a loopback or private address |
 | `AI_JSON_MODE` | `true` | set `false` for a server that rejects `response_format` |
-| `AI_TIMEOUT_SECONDS` | `3` | then the keyword fallback takes over |
+| `AI_TIMEOUT_SECONDS` | `3` | after this the instruction is refused, not guessed |
 | `ADMIN_PIN` | `1234` | keeps the audience out of `/admin` |
 | `MAX_INSTRUCTIONS` | `14` | per team, accepted and rejected both count |
 | `TURN_SECONDS` | `20` | to type one instruction |
@@ -388,7 +387,6 @@ If you have a faster machine, `small` is still worth one timing run: switch with
 | `FILTER_SECONDS` | `10` | `tunggu` must reach this to set `filtered` |
 | `STT_MODE` | `browser` | `browser` \| `server` \| `off` |
 | `STT_LANG` | `id-ID` | passed to the speech engine |
-| `AUTO_SUBMIT_DELAY_MS` | `2000` | countdown before a transcript is sent |
 | `WHISPER_MODEL` | `base` | `tiny` \| `base` \| `small` \| `medium` |
 | `HTTPS_CERT` / `HTTPS_KEY` | *(empty)* | set both to serve TLS; see the HTTPS section |
 
@@ -407,7 +405,7 @@ Point `AI_BASE_URL` at whatever you run:
 | vLLM | `http://127.0.0.1:8000/v1` | the served name | not needed |
 
 A **loopback or private address needs no key**; a public host without one counts as
-not configured and the keyword parser answers instead, with no wasted requests. The
+not configured and instructions are refused rather than guessed. The
 `Authorization` header is only sent when a key exists, so keyless local servers are never
 handed a bogus `Bearer`. The one provider-specific field — DeepSeek's `thinking` — is
 only added when the host is actually DeepSeek.
@@ -458,14 +456,13 @@ src/engineer_bot/
   config.py         every coordinate, limit, message and default
   models.py         Command, WorldState, JudgeResult, views
   judge.py          sanitize -> translate -> validate (validate is pure)
-  keyword_parser.py offline Indonesian parser (fillers, mishearings)
   ai_client.py      DeepSeek, one keep-alive client, LRU cache, 3 s timeout
   game.py           turn order, phases, timers, budget, win and tie-break rules
   logbook.py        round log writer
   stt.py            phase 2 whisper transcriber + upload service
   main.py           FastAPI app, routes, sockets, 1 Hz broadcast
 static/             team.html, admin.html, screen.html, app.js, voice.js, style.css
-scripts/simulate.py full dry run with the keyword parser
+scripts/simulate.py full dry run with a stub model
 tests/              251 tests, all offline
 ```
 
@@ -514,12 +511,13 @@ laptops, once, before the day.
 | 3 | Submit an accepted instruction | the admin column goes gold with `TERIMA · …`, the projector says `MENUNGGU JURI…`, and **nothing moves** until you press Terima |
 | 4 | Press **Tolak** on a proposal you know is right | the team gets *Ditolak oleh operator.* and loses the turn |
 | 5 | Submit `maju` (no number) | the proposal is `TOLAK · Berapa langkah?`; **Terima** still rejects |
-| 6 | Do nothing for 20 s | *Waktu habis.*, the turn passes, the projector says the same |
+| 6 | Type a few words, then let the 20 s run out | the words are submitted for you, judged like any other instruction |
+| 7 | Do nothing at all for 20 s | *Waktu habis.*, the turn passes, the projector says the same |
 | 7 | Reload `/screen` mid-round | it shows the current state and does **not** replay the last verdict |
 | 8 | Open `/team/a` over **https** on a second laptop, press the mic | the browser asks for microphone permission once |
-| 9 | Say "maju dua langkah" | `Mendengarkan...` → transcript appears → countdown → sent by itself |
+| 10 | Say "maju dua langkah" | `Mendengarkan...` → the text appears in the box and **waits** |
 | 10 | Same on **Chrome** and on **Edge** | identical behaviour; both use the same engine |
-| 11 | Type a character during the countdown | countdown disappears, nothing is sent, **Kirim** still works |
+| 11 | Edit the transcript before sending | the edited text is what gets judged |
 | 12 | Press **Ulangi** | records again, replaces the transcript |
 | 13 | Deny the permission prompt | `Mikrofon tidak tersedia, silakan ketik`, mic disabled, typing still works |
 | 14 | Unplug a USB microphone mid-turn, then press the mic | `no-mic`, keyboard unaffected, **no instruction used up** |
@@ -527,7 +525,7 @@ laptops, once, before the day.
 | 16 | Open `/team/a` over **http** from another laptop | mic refuses to work; the keyboard still does (this is why HTTPS matters) |
 | 17 | Open the admin page during all of the above | the team's `Suara` column matches what the page shows |
 | 18 | `STT_MODE=off`, reload | no mic button at all, status reads *Ketik satu instruksi* |
-| 19 | Let the turn timer run out while listening | mic closes, `Waktu habis.`, nothing submitted |
+| 20 | Let the turn timer run out with text in the box | it is submitted automatically |
 
 ## Troubleshooting
 
@@ -535,7 +533,7 @@ laptops, once, before the day.
 |---|---|
 | Team page says *Menunggu ronde dimulai* | nobody pressed **Mulai** |
 | Page never updates | server asleep, or the socket died — reload; state comes back |
-| Every instruction falls back to keyword | no key, no internet, or a 3 s timeout; check the admin dot |
+| Every instruction is refused, *Model AI tidak menjawab* | the endpoint is down or the key is wrong; check the AI row and the latency dot |
 | `ADMIN_PIN` rejected | PIN is read at startup; restart after editing `.env` |
 | Projector shows nothing | the page is not on `/screen`, or the laptop mirrored instead of extended |
 | Projector frozen on the last verdict | the socket dropped — reload; it reconnects and shows the current state |

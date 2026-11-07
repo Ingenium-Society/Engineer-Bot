@@ -213,20 +213,7 @@ body.gate input { padding: 0.7em; border-radius: 8px; border: 1px solid var(--li
 .voice-line.live { color: var(--gold); }
 .voice-line.error { color: var(--reject); }
 
-.voice-bar {
-  height: 4px;
-  border-radius: 999px;
-  background: var(--panel-2);
-  overflow: hidden;
-}
 
-.voice-bar > span {
-  display: block;
-  height: 100%;
-  width: 100%;
-  background: var(--gold);
-  transition: width 0.1s linear;
-}
 
 button.link {
   background: none;
@@ -240,7 +227,6 @@ button.link {
 
 .mic[hidden],
 .voice[hidden],
-.voice-bar[hidden] { display: none; }
 
 .hint { font-family: var(--mono); font-size: 12px; color: var(--muted); letter-spacing: 0.06em; }
 
@@ -380,6 +366,14 @@ button.link {
   text-transform: uppercase;
   color: var(--gold);
 }
+
+.pending-text {
+  font-size: 1.05rem;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--text);
+}
+.pending-text:empty { display: none; }
 
 .pending-verdict { font-size: 1.02rem; font-weight: 700; line-height: 1.3; }
 .pending-verdict.accept { color: var(--accept); }

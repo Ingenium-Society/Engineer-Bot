@@ -54,7 +54,10 @@ class Command(BaseModel):
     @classmethod
     def _canonical(cls, value: object) -> object:
         if isinstance(value, str):
-            return config.canonical_object(value) or value.strip().lower() or None
+            # No synonym table any more: the model is told the exact object
+            # names, and anything else is a genuine misunderstanding the
+            # validator should reject rather than quietly fix up.
+            return value.strip().lower() or None
         return value
 
     @field_validator("n", mode="before")
@@ -164,9 +167,10 @@ class TeamView(BaseModel):
     turn: str | None = None
     #: True while a verdict is waiting for the operator to confirm it.
     pending: bool = False
+    #: A transient message, e.g. "the model did not answer".
+    notice: str | None = None
     stt_mode: SttMode = "browser"
     stt_lang: str = "id-ID"
-    auto_submit_ms: int = 2000
 
 
 class AdminTeamView(TeamView):

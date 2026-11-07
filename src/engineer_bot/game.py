@@ -107,6 +107,8 @@ class TeamState:
     stt_engine: str | None = None
     #: Live text on the team's page, mirrored to the projector while they type.
     draft: str = ""
+    #: Transient message for the player, cleared on the next submission.
+    notice: str | None = None
 
     @property
     def label(self) -> str:
@@ -212,6 +214,7 @@ class Game:
             team.last_raw = None
             team.stt_ms = None
             team.draft = ""
+            team.notice = None
             team.phase = "WAITING"
             team.turn_deadline = 0.0
         # Team A always opens the round.
@@ -251,6 +254,7 @@ class Game:
             team.last_raw = None
             team.stt_ms = None
             team.draft = ""
+            team.notice = None
         await self._notify()
 
     async def pause(self) -> None:
@@ -291,6 +295,17 @@ class Game:
         return changed
 
     async def _timeout(self, team: TeamState) -> None:
+        # Time is up: send whatever is in the box rather than throw it away.
+        # The draft is mirrored on every keystroke, so this works even if the
+        # page is throttled or the socket is lagging.
+        draft = (team.draft or "").strip()
+        if draft:
+            # Push the deadline out first: submit() has awaits before it flips
+            # the phase, and a second tick must not spawn a duplicate.
+            team.turn_deadline = self.clock() + 5.0
+            self._spawn(self.submit(team.id, draft, source="timeout"))
+            return
+
         team.generation += 1
         team.used += 1
         entry = HistoryEntry(
@@ -360,16 +375,20 @@ class Game:
             if now - team.last_submit_at < config.SUBMIT_RATE_LIMIT_SECONDS:
                 return
             team.last_submit_at = now
+            team.notice = None
             team.generation += 1
             generation = team.generation
             team.used += 1
             team.phase = "JUDGING"
             team.pending_text = text
             team.input_source = source
-            team.last_raw = raw
+            # Keep exactly what was submitted, typed or spoken: the operator has
+            # to judge the sentence, not the sanitised version of it.
+            exact = raw if raw is not None else text
+            team.last_raw = exact
             team.stt_ms = stt_ms
             await self._notify()
-            await self._judge_and_apply(team, text, generation, source, raw, stt_ms)
+            await self._judge_and_apply(team, text, generation, source, exact, stt_ms)
 
     async def set_draft(self, team_id: str, text: str) -> None:
         """Mirror the team's live typing to the projector.
@@ -426,6 +445,9 @@ class Game:
         else:
             assert clean is not None
             translation = await judge.translate(clean, ai=self.ai)
+            if translation is None:
+                await self._refuse(team, generation)
+                return
             result = judge.validate(
                 translation.command,
                 team.state,
@@ -457,16 +479,31 @@ class Game:
                     )
             else:
                 # Always: the judge proposes, a human accepts. No mode, no switch.
-                result = await self._await_operator(team, clean, translation, result)
+                result = await self._await_operator(team, text, translation, result)
 
         if team.generation != generation:
             return
         await self._apply(team, result, text, translation, generation, source, raw, stt_ms)
 
+    async def _refuse(self, team: TeamState, generation: int) -> None:
+        """Nobody could read the sentence: hand the turn back, uncharged.
+
+        An unreachable model is our outage, not the team's mistake, so the
+        instruction is not counted and the round does not move on.
+        """
+        if team.generation != generation:
+            return
+        team.used = max(0, team.used - 1)
+        team.phase = "TYPING"
+        team.pending_text = None
+        team.notice = config.MSG_NO_MODEL
+        team.turn_deadline = self.clock() + self.settings.turn_seconds
+        await self._notify()
+
     async def _await_operator(
         self,
         team: TeamState,
-        clean: str,
+        exact: str,
         translation: TranslationResult,
         proposed: JudgeResult,
     ) -> JudgeResult:
@@ -476,7 +513,9 @@ class Game:
         presses Terima/Tolak; tests and the dry run inject a function that
         answers immediately.
         """
-        pending = Pending(text=clean, command=translation.command, proposed=proposed)
+        # The operator judges the sentence the player actually wrote, not the
+        # sanitised one.
+        pending = Pending(text=exact, command=translation.command, proposed=proposed)
         team.pending = pending
         await self._notify()
         if self.confirm is not None:
@@ -703,9 +742,9 @@ class Game:
             paused=self.paused,
             turn=self.turn,
             pending=team.pending is not None,
+            notice=team.notice,
             stt_mode=self.settings.stt_mode,  # type: ignore[arg-type]
             stt_lang=self.settings.stt_lang,
-            auto_submit_ms=self.settings.auto_submit_delay_ms,
         )
 
     def admin_team_view(self, team_id: str) -> AdminTeamView:

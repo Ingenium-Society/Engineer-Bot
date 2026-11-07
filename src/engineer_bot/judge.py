@@ -1,20 +1,19 @@
-"""The judge: sanitize -> translate (AI or keyword) -> validate.
+"""The judge: sanitize -> translate (model only) -> validate.
 
 Two hard rules live here:
 
-* The AI is a *translator*. It only ever produces a :class:`Command`. It can
-  never make anything accepted.
+* The model is a *translator*. It only ever produces a :class:`Command`. It can
+  never make anything accepted, and there is no rule-based fallback: if the
+  model cannot read the sentence, nobody did.
 * :func:`validate` is pure. Same command plus same state always gives the same
   answer, and it is the only function that may return ``ACCEPT``.
 """
 
 from __future__ import annotations
 
-import time
 import unicodedata
 
 from . import config
-from .keyword_parser import parse_keyword
 from .models import Command, JudgeResult, TranslationResult, Verb, WorldState
 
 # --------------------------------------------------------------------------
@@ -45,30 +44,15 @@ async def translate(
     text: str,
     *,
     ai=None,
-) -> TranslationResult:
-    """Turn player text into a :class:`Command`, with the keyword parser as safety net."""
+) -> TranslationResult | None:
+    """Ask the model to read the sentence. ``None`` means nobody read it.
+
+    There is deliberately no rule-based fallback: a verdict comes from the model
+    or from the operator, never from a keyword table that guesses.
+    """
     if ai is None or not getattr(ai, "available", False):
-        started = time.perf_counter()
-        command = parse_keyword(text)
-        return TranslationResult(
-            command=command,
-            source="keyword",
-            latency_ms=(time.perf_counter() - started) * 1000,
-        )
-
-    result = await ai.translate(text)
-    if result is not None:
-        return result
-
-    # AI failed: fall back, but keep the reason so the admin page can show it.
-    started = time.perf_counter()
-    command = parse_keyword(text)
-    return TranslationResult(
-        command=command,
-        source="keyword",
-        latency_ms=(time.perf_counter() - started) * 1000,
-        error=getattr(ai, "last_error", None) or "ai_unavailable",
-    )
+        return None
+    return await ai.translate(text)
 
 
 # --------------------------------------------------------------------------

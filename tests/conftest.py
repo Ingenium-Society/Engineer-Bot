@@ -8,6 +8,7 @@ import pytest
 
 from engineer_bot import config
 from engineer_bot.game import Game
+from engineer_bot.models import Command, TranslationResult
 
 LOG_DIR = Path(__file__).resolve().parents[1] / ".pytest-logs"
 
@@ -44,6 +45,48 @@ def logdir():
         stale.unlink()
 
 
+#: What the "model" reads. The app has no rule-based fallback any more, so a
+#: test that expects a verdict has to say what the model said.
+READINGS: dict[str, Command] = {
+    "maju": Command(verb="MAJU"),
+    "maju 1": Command(verb="MAJU", n=1),
+    "maju 2": Command(verb="MAJU", n=2),
+    "maju 3": Command(verb="MAJU", n=3),
+    "maju dua langkah": Command(verb="MAJU", n=2),
+    "maju dua langkah!": Command(verb="MAJU", n=2),
+    "maju dua langka": Command(verb="MAJU", n=2),
+    "eh maju dua langka": Command(verb="MAJU", n=2),
+    "eh maju dua": Command(verb="MAJU", n=2),
+    "ambil gelas": Command(verb="AMBIL", objek="gelas"),
+    "ambil toples": Command(verb="AMBIL", objek="toples"),
+    "belok kanan 90": Command(verb="BELOK", arah="KANAN", n=90),
+    "tuang gelas ke corong": Command(verb="TUANG", objek="gelas", target="corong"),
+    "tunggu 1 detik": Command(verb="TUNGGU", n=1),
+    "tunggu 10 detik": Command(verb="TUNGGU", n=10),
+    "tambah tablet ke toples": Command(verb="TAMBAH", objek="tablet", target="toples"),
+    "aduk dengan sendok": Command(verb="ADUK", objek="sendok"),
+    "taruh toples di area finish": Command(verb="TARUH", objek="toples", target="finish"),
+}
+
+
+class StubAI:
+    """A model that only knows the phrases a test needs."""
+
+    available = True
+    last_error = None
+
+    def __init__(self, readings: dict[str, Command] | None = None) -> None:
+        self.readings = READINGS if readings is None else readings
+        self.calls: list[str] = []
+
+    async def translate(self, text: str) -> TranslationResult | None:
+        self.calls.append(text)
+        command = self.readings.get(" ".join(text.lower().split()))
+        if command is None:
+            return None
+        return TranslationResult(command=command, source="ai", latency_ms=1.0)
+
+
 @pytest.fixture
 def make_game(logdir, clock, monkeypatch):
     monkeypatch.setattr(config, "REJECT_HOLD_SECONDS", 0.01)
@@ -63,7 +106,7 @@ def make_game(logdir, clock, monkeypatch):
             ai_api_key="",
             **overrides,
         )
-        game = Game(settings, ai=ai, clock=clock, log_dir=logdir)
+        game = Game(settings, ai=ai if ai is not None else StubAI(), clock=clock, log_dir=logdir)
         if auto:
             game.confirm = auto_confirm
         return game

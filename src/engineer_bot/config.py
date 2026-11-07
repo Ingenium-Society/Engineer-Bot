@@ -64,16 +64,6 @@ OBJECT_LABELS: dict[str, str] = {
     "finish": "area finish",
 }
 
-#: Canonical object -> accepted Indonesian aliases. Longest alias wins.
-OBJECT_ALIASES: dict[str, tuple[str, ...]] = {
-    "gelas": ("gelas air kotor", "gelas kotor", "gelas", "cangkir", "air kotor"),
-    "corong": ("corong filter", "corong", "filter", "saringan"),
-    "toples": ("toples bersih", "toples", "botol", "wadah", "jar"),
-    "sendok": ("sendok pengaduk", "sendok"),
-    "tablet": ("tablet pemurni", "tablet", "obat"),
-    "finish": ("area finish", "area finis", "garis akhir", "garis finis", "finish", "akhir"),
-}
-
 # --------------------------------------------------------------------------
 # Limits
 # --------------------------------------------------------------------------
@@ -117,73 +107,12 @@ MSG_TOO_LONG = "Terlalu panjang."
 MSG_TIMEOUT = "Waktu habis."
 MSG_NOT_TAKEABLE = "Benda itu tidak bisa diambil."
 MSG_OPERATOR_REJECT = "Ditolak oleh operator."
-
-#: Filler words a speech engine happily transcribes. Dropped before parsing.
-SPEECH_FILLERS = (
-    "eh",
-    "ehh",
-    "ehm",
-    "em",
-    "emm",
-    "eee",
-    "hmm",
-    "hm",
-    "oke",
-    "ok",
-    "ya",
-    "yah",
-    "nah",
-    "anu",
-    "kan",
-    "sih",
-    "deh",
-    "kok",
-    "dong",
-    "lah",
-    "nih",
-    "tolong",
-    "coba",
-    "mohon",
-)
-
-#: Mishearings that are safe to correct. Whole-word, longest phrase first.
-#: Nothing here invents a number, a direction or an object.
-SPEECH_FIXES: dict[str, str] = {
-    "belok ke kiri": "belok kiri",
-    "belok ke kanan": "belok kanan",
-    "belok kekiri": "belok kiri",
-    "belok kekanan": "belok kanan",
-    "putar ke kiri": "putar kiri",
-    "putar ke kanan": "putar kanan",
-    "jalan kedepan": "jalan ke depan",
-    "maju kedepan": "maju",
-    "langka": "langkah",
-    "langkah langkah": "langkah",
-    "gelas nya": "gelas",
-    "gelasnya": "gelas",
-    "cangkirnya": "cangkir",
-    "toples nya": "toples",
-    "toplesnya": "toples",
-    "botolnya": "botol",
-    "sendok nya": "sendok",
-    "sendoknya": "sendok",
-    "tablet nya": "tablet",
-    "tabletnya": "tablet",
-    "corong nya": "corong",
-    "corongnya": "corong",
-    "saringan nya": "saringan",
-    "area finis": "area finish",
-    "garis finis": "garis finish",
-    "aduuk": "aduk",
-    "tuangkan": "tuang",
-    "ambilkan": "ambil",
-}
+MSG_NO_MODEL = "Model AI tidak menjawab. Instruksi tidak dihitung, coba lagi."
 
 #: Speech to text
 STT_MODES = ("browser", "server", "off")
 STT_DEFAULT_MODE = "browser"
 STT_LANG = "id-ID"
-AUTO_SUBMIT_DELAY_MS = 2000
 #: faster-whisper size. Measured on the event laptop, 1.4 s Indonesian clip:
 #: base 0.4-0.9 s, small 3.0-13.3 s for the same text. base wins.
 WHISPER_MODEL = "base"
@@ -225,6 +154,7 @@ Verb yang valid: MAJU, MUNDUR, BELOK, AMBIL, TUANG, TUNGGU, TAMBAH, ADUK, TARUH.
 Format: {"verb":"MAJU","n":3,"arah":null,"objek":null,"target":null,"alasan":"<penjelasan>"}
 - MAJU/MUNDUR butuh n (jumlah langkah, angka)
 - BELOK butuh arah ("KIRI"/"KANAN") dan n (90/180)
+- objek dan target HARUS salah satu dari: gelas, corong, toples, tablet, sendok, finish
 - AMBIL butuh objek; TUANG butuh objek dan target
 - TUNGGU butuh n (detik)
 - TAMBAH/TARUH butuh objek dan target; ADUK butuh objek
@@ -304,7 +234,6 @@ class Settings:
     filter_seconds: int = FILTER_SECONDS
     stt_mode: str = STT_DEFAULT_MODE
     stt_lang: str = STT_LANG
-    auto_submit_delay_ms: int = AUTO_SUBMIT_DELAY_MS
     whisper_model: str = WHISPER_MODEL
     https_cert: str = ""
     https_key: str = ""
@@ -351,28 +280,10 @@ class Settings:
             filter_seconds=_int_env("FILTER_SECONDS", FILTER_SECONDS),
             stt_mode=mode,
             stt_lang=os.getenv("STT_LANG", "").strip() or STT_LANG,
-            auto_submit_delay_ms=_int_env("AUTO_SUBMIT_DELAY_MS", AUTO_SUBMIT_DELAY_MS),
             whisper_model=os.getenv("WHISPER_MODEL", "").strip() or WHISPER_MODEL,
             https_cert=os.getenv("HTTPS_CERT", "").strip(),
             https_key=os.getenv("HTTPS_KEY", "").strip(),
         )
-
-
-def canonical_object(word: str | None) -> str | None:
-    """Map any alias to its canonical object name. Returns None when unknown."""
-    if not word:
-        return None
-    probe = " ".join(word.lower().strip().split())
-    best: str | None = None
-    best_len = 0
-    for canonical, aliases in OBJECT_ALIASES.items():
-        for alias in aliases:
-            if alias == probe:
-                return canonical
-            matched = probe.startswith(alias) or probe.endswith(alias) or alias in probe
-            if matched and len(alias) > best_len:
-                best, best_len = canonical, len(alias)
-    return best
 
 
 def tile_of(objek: str | None) -> tuple[int, int] | None:

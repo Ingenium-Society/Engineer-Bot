@@ -10,7 +10,66 @@
 (function () {
   'use strict';
 
-  var DEFAULT_SILENCE_MS = 6000;
+  var DEFAULT_MAX_MS = 6000; // hard ceiling on one recording
+  var DEFAULT_TAIL_MS = 700; // silence after speech before we stop
+  var SPEECH_LEVEL = 6; // byte-domain peak; room noise sits below this
+
+  /* MediaRecorder does not know when the speaker stopped. Without this the
+   * recorder runs to its ceiling, which turns a 2 s command into an 8 s wait:
+   * 6 s of recording, then the upload, then the countdown. */
+  function watchSpeech(stream, options) {
+    var AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return function () {};
+    var ctx;
+    try {
+      ctx = new AudioCtx();
+    } catch (err) {
+      return function () {};
+    }
+    var source = ctx.createMediaStreamSource(stream);
+    var analyser = ctx.createAnalyser();
+    analyser.fftSize = 512;
+    source.connect(analyser);
+    var buffer = new Uint8Array(analyser.fftSize);
+    var heardAt = 0;
+    var closed = false;
+
+    function cleanup() {
+      if (closed) return;
+      closed = true;
+      clearInterval(timer);
+      try {
+        source.disconnect();
+      } catch (err) {
+        /* ignore */
+      }
+      try {
+        ctx.close();
+      } catch (err) {
+        /* ignore */
+      }
+    }
+
+    var timer = setInterval(function () {
+      analyser.getByteTimeDomainData(buffer);
+      var peak = 0;
+      for (var i = 0; i < buffer.length; i += 1) {
+        var amplitude = Math.abs(buffer[i] - 128);
+        if (amplitude > peak) peak = amplitude;
+      }
+      var now = window.performance.now();
+      if (peak >= SPEECH_LEVEL) {
+        heardAt = now;
+        return;
+      }
+      if (heardAt && now - heardAt > options.tailMs) {
+        cleanup();
+        options.onDone();
+      }
+    }, 50);
+
+    return cleanup;
+  }
 
   function BrowserRecognition() {
     return window.SpeechRecognition || window.webkitSpeechRecognition || null;
@@ -33,7 +92,7 @@
   }
 
   function createBrowserEngine(options) {
-    var silenceMs = options.silenceMs || DEFAULT_SILENCE_MS;
+    var stallMs = options.maxMs || DEFAULT_MAX_MS;
     var rec = null;
     var listening = false;
     var silenceTimer = null;
@@ -51,7 +110,7 @@
 
     function arm() {
       clearTimer();
-      silenceTimer = setTimeout(stop, silenceMs);
+      silenceTimer = setTimeout(stop, stallMs);
     }
 
     function stop() {
@@ -184,8 +243,13 @@
     var stream = null;
     var listening = false;
     var startedAt = 0;
+    var stopWatch = null;
 
     function release() {
+      if (stopWatch) {
+        stopWatch();
+        stopWatch = null;
+      }
       if (stream) {
         stream.getTracks().forEach(function (track) {
           track.stop();
@@ -247,10 +311,15 @@
           startedAt = window.performance.now();
           if (options.onStatus) options.onStatus('ok');
           if (options.onStart) options.onStart();
-          // Push-to-talk: the button stops it, with a hard ceiling as a backstop.
+          // Stop when the player stops talking; the ceiling is only a backstop
+          // for a room too loud for the level test.
+          stopWatch = watchSpeech(mediaStream, {
+            tailMs: options.tailMs || DEFAULT_TAIL_MS,
+            onDone: stop
+          });
           setTimeout(function () {
             if (listening) stop();
-          }, options.silenceMs || DEFAULT_SILENCE_MS);
+          }, options.maxMs || DEFAULT_MAX_MS);
         })
         .catch(function (err) {
           var status = err && err.name === 'NotAllowedError' ? 'denied' : 'no-mic';

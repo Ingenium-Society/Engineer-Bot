@@ -6,7 +6,7 @@ import asyncio
 
 import pytest
 
-from conftest import FakeClock
+from conftest import FakeClock, StubAI
 from engineer_bot import config
 from engineer_bot.game import Game
 from engineer_bot.models import WorldState
@@ -530,3 +530,78 @@ async def test_the_operator_confirms_the_ai_reading_and_its_explanation(make_gam
     await game.force("a", "accept")
     await task
     assert game.teams["a"].records[-1].source == "ai"
+
+
+async def test_the_operator_sees_the_exact_sentence_while_pending(make_game):
+    """Case and punctuation survive: this is what the human is judging."""
+    game = make_game(auto_confirm=False)
+    await game.start()
+
+    task = asyncio.ensure_future(game.submit("a", "Maju Dua Langkah!"))
+    await settle()
+    assert game.admin_view()["teams"]["a"]["pending_text"] == "Maju Dua Langkah!"
+
+    await game.force("a", "accept")
+    await task
+
+
+# ------------------------------------------------------- the clock runs out
+
+
+async def test_a_timeout_sends_whatever_is_in_the_box(make_game, clock):
+    """Time up is not a lost instruction: the draft goes to the judge."""
+    game = make_game()
+    await game.start()
+    await game.set_draft("a", "maju 2")
+
+    clock.advance(21)
+    await game.tick()
+    await settle()
+
+    team = game.teams["a"]
+    assert team.used == 1
+    assert team.last is not None
+    assert team.last.status == "ACCEPT"
+    assert team.last.text == "maju 2"
+    assert team.records[-1].input_source == "timeout"
+
+
+async def test_an_empty_box_still_times_out(make_game, clock):
+    game = make_game()
+    await game.start()
+
+    clock.advance(21)
+    await game.tick()
+
+    team = game.teams["a"]
+    assert team.last is not None
+    assert team.last.message == config.MSG_TIMEOUT
+    assert team.records[-1].input_source == "timeout"
+
+
+async def test_a_timeout_draft_is_only_sent_once(make_game, clock):
+    game = make_game()
+    await game.start()
+    await game.set_draft("a", "maju 2")
+
+    clock.advance(21)
+    await game.tick()
+    await game.tick()
+    await settle()
+
+    assert game.teams["a"].used == 1
+
+
+async def test_a_dead_model_refuses_without_charging_the_team(make_game):
+    """An unreachable model is our outage, not the team's mistake."""
+    game = make_game(ai=StubAI({}), auto_confirm=False)
+    await game.start()
+
+    await game.submit("a", "maju 2")
+
+    team = game.teams["a"]
+    assert team.used == 0, "the instruction must not be counted"
+    assert team.phase == "TYPING", "the team keeps the turn"
+    assert team.notice == config.MSG_NO_MODEL
+    assert game.turn == "a"
+    assert team.history == []
