@@ -143,10 +143,13 @@ Browsers only hand out the microphone on a **secure origin**. `http://localhost`
 `http://192.168.x.x` does not, so the team laptops get `no-mic` until you serve TLS.
 The keyboard works either way; only voice needs this.
 
+**On the server (macOS):**
+
 ```bash
-brew install mkcert
-mkcert -install                     # creates a local root CA and trusts it on THIS machine
+brew install mkcert nss          # nss only matters if you use Firefox
+mkcert -install                  # creates a CA and trusts it on THIS machine
 mkdir -p certs
+cp "$(mkcert -CAROOT)/rootCA.pem" certs/rootCA.pem   # this is what the laptops need
 mkcert -cert-file certs/cert.pem -key-file certs/key.pem 192.168.1.24 localhost 127.0.0.1
 ```
 
@@ -159,12 +162,26 @@ HTTPS_KEY=certs/key.pem
 ```
 
 Restart the server; the banner switches to `https://` and the pages open `wss://` sockets
-by themselves. Finally, **trust the root CA on both team laptops**, or the page shows a
-certificate warning and the mic stays blocked:
+by themselves.
 
-- macOS: `$(mkcert -CAROOT)/rootCA.pem` → double-click → Keychain → *Always Trust*.
-- Windows: `rootCA.pem` → double-click → Install → *Local Machine* → *Trusted Root
-  Certification Authorities*.
+**On the two team laptops: trust the CA, do not install mkcert.** `mkcert -install`
+generates a *new* CA on whichever machine runs it; the laptops need the server's one, or
+the warning stays and the mic stays blocked.
+
+- macOS: `sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain rootCA.pem`
+  — or double-click `rootCA.pem` → Keychain Access → *Always Trust*.
+- Windows, in an **Administrator** PowerShell: `certutil -addstore -f "ROOT" rootCA.pem`
+  — or double-click → Install Certificate → *Local Machine* → *Trusted Root Certification
+  Authorities*.
+- Firefox keeps its own certificate store: Settings → Privacy & Security → Certificates →
+  View Certificates → Authorities → Import.
+
+Verify on each laptop: `https://192.168.1.24:8000/healthz` shows a padlock with no warning,
+and the mic button is enabled.
+
+> You only need mkcert itself on a machine that *creates* certificates. If that ever has
+> to be a Windows box: `choco install mkcert`, `scoop install mkcert`, or grab
+> `mkcert-v*-windows-amd64.exe` from the releases page and rename it `mkcert.exe`.
 
 Fallback if you cannot install a CA on the school laptops: open
 `chrome://flags/#unsafely-treat-insecure-origin-as-secure`, add
