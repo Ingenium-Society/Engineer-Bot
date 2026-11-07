@@ -49,7 +49,7 @@ def test_tunnel_mode_serves_plain_http_locally():
     )
     assert settings.scheme == "http"
     assert settings.tunnel is True
-    assert "HTTPS_CERT diabaikan" in banner("0.0.0.0", 8000, settings)
+    assert "HTTPS_CERT/HTTPS_KEY diabaikan" in banner("0.0.0.0", 8000, settings)
 
 
 def test_lan_mode_is_the_default():
