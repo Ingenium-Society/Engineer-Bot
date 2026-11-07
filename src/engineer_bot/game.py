@@ -816,6 +816,9 @@ class Game:
             notice=team.notice,
             stt_mode=self.settings.stt_mode,  # type: ignore[arg-type]
             stt_lang=self.settings.stt_lang,
+            stt_tail_ms=self.settings.stt_tail_ms,
+            stt_max_ms=self.settings.stt_max_ms,
+            stt_level=self.settings.stt_level,
         )
 
     def admin_team_view(self, team_id: str) -> AdminTeamView:

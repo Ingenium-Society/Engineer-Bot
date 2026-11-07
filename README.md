@@ -395,6 +395,9 @@ If you have a faster machine, `small` is still worth one timing run: switch with
 | `FILTER_SECONDS` | `10` | `tunggu` must reach this to set `filtered` |
 | `STT_MODE` | `browser` | `browser` \| `server` \| `off` |
 | `STT_LANG` | `id-ID` | passed to the speech engine |
+| `STT_TAIL_MS` | `1000` | silence after speech before the clip ends |
+| `STT_MAX_MS` | `6000` | hard ceiling on one recording |
+| `STT_LEVEL` | `6` | peak that counts as speech; raise it in a noisy room |
 | `WHISPER_MODEL` | `base` | `tiny` \| `base` \| `small` \| `medium` |
 | `HTTPS_CERT` / `HTTPS_KEY` | *(empty)* | set both to serve TLS; see the HTTPS section |
 
@@ -548,6 +551,8 @@ laptops, once, before the day.
 |---|---|
 | Team page says *Menunggu ronde dimulai* | nobody pressed **Mulai** |
 | Page never updates | server asleep, or the socket died — reload; state comes back |
+| The clip cuts off mid-sentence | raise `STT_TAIL_MS` to 1200–1500 |
+| The clip runs the full 6 s every time | the room is loud enough to count as speech: raise `STT_LEVEL` to 10–14 |
 | Every instruction is refused, *Model AI tidak menjawab* | the endpoint is down or the key is wrong; check the AI row and the latency dot |
 | `ADMIN_PIN` rejected | PIN is read at startup; restart after editing `.env` |
 | Projector shows nothing | the page is not on `/screen`, or the laptop mirrored instead of extended |

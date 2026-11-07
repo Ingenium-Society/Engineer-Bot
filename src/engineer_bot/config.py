@@ -120,8 +120,13 @@ STT_LANG = "id-ID"
 #: faster-whisper size. Measured on the event laptop, 1.4 s Indonesian clip:
 #: base 0.4-0.9 s, small 3.0-13.3 s for the same text. base wins.
 WHISPER_MODEL = "base"
-#: The page stops the microphone after this much silence.
-STT_SILENCE_MS = 6000
+#: Silence after speech before the recorder stops. A hall with echo needs more
+#: than a quiet room: too short and a mid-sentence pause ends the clip.
+STT_TAIL_MS = 1000
+#: Hard ceiling on one recording, in case the room is too loud to hear silence.
+STT_MAX_MS = 6000
+#: Peak amplitude (0-127) that counts as speech. Raise it in a noisy room.
+STT_LEVEL = 6
 #: Phase 2 only: refuse absurd uploads before they reach the transcriber.
 STT_MAX_UPLOAD_BYTES = 4 * 1024 * 1024
 STT_STATUSES = ("ok", "no-mic", "denied", "offline", "unsupported")
@@ -238,6 +243,9 @@ class Settings:
     filter_seconds: int = FILTER_SECONDS
     stt_mode: str = STT_DEFAULT_MODE
     stt_lang: str = STT_LANG
+    stt_tail_ms: int = STT_TAIL_MS
+    stt_max_ms: int = STT_MAX_MS
+    stt_level: int = STT_LEVEL
     whisper_model: str = WHISPER_MODEL
     https_cert: str = ""
     https_key: str = ""
@@ -284,6 +292,9 @@ class Settings:
             filter_seconds=_int_env("FILTER_SECONDS", FILTER_SECONDS),
             stt_mode=mode,
             stt_lang=os.getenv("STT_LANG", "").strip() or STT_LANG,
+            stt_tail_ms=_int_env("STT_TAIL_MS", STT_TAIL_MS),
+            stt_max_ms=_int_env("STT_MAX_MS", STT_MAX_MS),
+            stt_level=_int_env("STT_LEVEL", STT_LEVEL),
             whisper_model=os.getenv("WHISPER_MODEL", "").strip() or WHISPER_MODEL,
             https_cert=os.getenv("HTTPS_CERT", "").strip(),
             https_key=os.getenv("HTTPS_KEY", "").strip(),

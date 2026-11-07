@@ -237,8 +237,9 @@
         voice.engine = window.EngineerBotVoice.create(mode, {
           lang: view.stt_lang || 'id-ID',
           team: teamId,
-          tailMs: 700,
-          maxMs: 6000,
+          tailMs: view.stt_tail_ms || 1000,
+          maxMs: view.stt_max_ms || 6000,
+          level: view.stt_level || 6,
           onStart: function () {
             voice.listening = true;
             els.mic.classList.add('listening');

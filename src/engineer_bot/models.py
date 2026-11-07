@@ -171,6 +171,9 @@ class TeamView(BaseModel):
     notice: str | None = None
     stt_mode: SttMode = "browser"
     stt_lang: str = "id-ID"
+    stt_tail_ms: int = 1000
+    stt_max_ms: int = 6000
+    stt_level: int = 6
 
 
 class AdminTeamView(TeamView):

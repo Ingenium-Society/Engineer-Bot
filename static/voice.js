@@ -11,7 +11,7 @@
   'use strict';
 
   var DEFAULT_MAX_MS = 6000; // hard ceiling on one recording
-  var DEFAULT_TAIL_MS = 700; // silence after speech before we stop
+  var DEFAULT_TAIL_MS = 1000; // silence after speech before we stop
   var SPEECH_LEVEL = 6; // byte-domain peak; room noise sits below this
 
   /* MediaRecorder does not know when the speaker stopped. Without this the
@@ -26,7 +26,19 @@
     } catch (err) {
       return function () {};
     }
-    var source = ctx.createMediaStreamSource(stream);
+    var source;
+    try {
+      source = ctx.createMediaStreamSource(stream);
+    } catch (err) {
+      // A stream whose track already ended cannot be tapped: fall back to the
+      // ceiling rather than breaking the recording.
+      try {
+        ctx.close();
+      } catch (closeErr) {
+        /* ignore */
+      }
+      return function () {};
+    }
     var analyser = ctx.createAnalyser();
     analyser.fftSize = 512;
     source.connect(analyser);
@@ -58,7 +70,7 @@
         if (amplitude > peak) peak = amplitude;
       }
       var now = window.performance.now();
-      if (peak >= SPEECH_LEVEL) {
+      if (peak >= options.level) {
         heardAt = now;
         return;
       }
@@ -324,6 +336,7 @@
           // for a room too loud for the level test.
           stopWatch = watchSpeech(mediaStream, {
             tailMs: options.tailMs || DEFAULT_TAIL_MS,
+            level: options.level || SPEECH_LEVEL,
             onDone: stop
           });
           setTimeout(function () {
