@@ -695,6 +695,28 @@ button.link {
   padding: 4vh 4vw;
 }
 .overlay[hidden] { display: none; }
+
+/* Verdict sound toggle: present for setup, invisible from the back of the hall. */
+.sfx-toggle {
+  position: fixed;
+  right: 14px;
+  bottom: 12px;
+  z-index: 20;
+  padding: 0.35em 0.75em;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(11, 14, 28, 0.6);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  opacity: 0.4;
+  transition: opacity 0.15s ease, color 0.15s ease;
+}
+.sfx-toggle:hover,
+.sfx-toggle:focus-visible { opacity: 1; }
+.sfx-toggle.off { color: var(--reject); border-color: rgba(224, 96, 74, 0.45); }
 .overlay-inner { display: grid; gap: 1.4vh; animation: overlay-in 0.6s ease-out; }
 
 .overlay-kicker {

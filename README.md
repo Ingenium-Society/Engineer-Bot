@@ -543,6 +543,7 @@ laptops, once, before the day.
 | Every instruction is refused, *Model AI tidak menjawab* | the endpoint is down or the key is wrong; check the AI row and the latency dot |
 | `ADMIN_PIN` rejected | PIN is read at startup; restart after editing `.env` |
 | Projector shows nothing | the page is not on `/screen`, or the laptop mirrored instead of extended |
+| No sound on a verdict | the browser blocks audio until the projector page gets a click — click once anywhere on it at setup. The faint **SUARA** button bottom-right toggles it |
 | Projector frozen on the last verdict | the socket dropped — reload; it reconnects and shows the current state |
 | Team page says *Menyambung ulang…* | the WebSocket is down; the page retries every second, nothing else needs doing |
 | `wss://…` fails with *bad response from the server* through a tunnel | cloudflared is forwarding to `http://localhost:8000` but the app is serving https — it was started without `PUBLIC_URL`. Restart the app with it set, then hard-reload the page: a cached page hides the mismatch until the socket fails |
