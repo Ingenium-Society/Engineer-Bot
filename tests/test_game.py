@@ -13,15 +13,11 @@ from engineer_bot.models import WorldState
 
 OPTIMAL = [
     "maju 2",
-    "ambil gelas",
-    "belok kanan 90",
-    "maju 3",
-    "tuang gelas ke corong",
-    "tunggu 10 detik",
-    "ambil toples",
-    "tambah tablet ke toples",
-    "aduk dengan sendok",
-    "taruh toples di area finish",
+    "taruh pemurni di corong",
+    "ambil botol",
+    "tuang botol ke corong",
+    "tunggu 5 detik",
+    "ambil hasil",
 ]
 
 
@@ -610,9 +606,7 @@ class SlowAI:
         except asyncio.CancelledError:
             self.cancelled = True
             raise
-        return TranslationResult(
-            command=Command(verb="MAJU", n=2), source="ai", latency_ms=1.0
-        )
+        return TranslationResult(command=Command(verb="MAJU", n=2), source="ai", latency_ms=1.0)
 
 
 async def test_the_sentence_reaches_the_operator_before_the_model_answers(make_game):
@@ -651,5 +645,3 @@ async def test_the_operator_can_reject_without_the_model(make_game, clock):
     assert team.last is not None and team.last.status == "REJECT"
     assert team.last.message == config.MSG_OPERATOR_REJECT
     assert slow.cancelled is True, "the model call should be dropped"
-
-

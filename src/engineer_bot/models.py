@@ -95,12 +95,10 @@ class WorldState(BaseModel):
     y: int = config.START_Y
     heading: str = config.START_HEADING
     holding: str | None = None
-    has_cup: bool = False
+    pemurni_placed: bool = False
+    has_bottle: bool = False
     poured: bool = False
-    filtered: bool = False
-    has_jar: bool = False
-    tablet_added: bool = False
-    stirred: bool = False
+    waited: bool = False
     finished: bool = False
 
     @property
@@ -112,12 +110,10 @@ class WorldState(BaseModel):
         return sum(
             1
             for flag in (
-                self.has_cup,
+                self.pemurni_placed,
+                self.has_bottle,
                 self.poured,
-                self.filtered,
-                self.has_jar,
-                self.tablet_added,
-                self.stirred,
+                self.waited,
                 self.finished,
             )
             if flag

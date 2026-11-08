@@ -3,7 +3,7 @@
   'use strict';
 
   var TEAM_IDS = ['a', 'b'];
-  var MILESTONES = 7;
+  var MILESTONES = 5;
 
   function $(selector, root) {
     return (root || document).querySelector(selector);

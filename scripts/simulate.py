@@ -22,15 +22,11 @@ from engineer_bot.models import Command, TranslationResult  # noqa: E402
 
 OPTIMAL = [
     "maju 2",
-    "ambil gelas",
-    "belok kanan 90",
-    "maju 3",
-    "tuang gelas ke corong",
-    "tunggu 10 detik",
-    "ambil toples",
-    "tambah tablet ke toples",
-    "aduk dengan sendok",
-    "taruh toples di area finish",
+    "taruh pemurni di corong",
+    "ambil botol",
+    "tuang botol ke corong",
+    "tunggu 5 detik",
+    "ambil hasil",
 ]
 
 
@@ -38,15 +34,11 @@ OPTIMAL = [
 #: rule-based fallback any more, so the dry run has to bring its own.
 READINGS: dict[str, Command] = {
     "maju 2": Command(verb="MAJU", n=2),
-    "ambil gelas": Command(verb="AMBIL", objek="gelas"),
-    "belok kanan 90": Command(verb="BELOK", arah="KANAN", n=90),
-    "maju 3": Command(verb="MAJU", n=3),
-    "tuang gelas ke corong": Command(verb="TUANG", objek="gelas", target="corong"),
-    "tunggu 10 detik": Command(verb="TUNGGU", n=10),
-    "ambil toples": Command(verb="AMBIL", objek="toples"),
-    "tambah tablet ke toples": Command(verb="TAMBAH", objek="tablet", target="toples"),
-    "aduk dengan sendok": Command(verb="ADUK", objek="sendok"),
-    "taruh toples di area finish": Command(verb="TARUH", objek="toples", target="finish"),
+    "taruh pemurni di corong": Command(verb="TARUH", objek="pemurni", target="corong"),
+    "ambil botol": Command(verb="AMBIL", objek="botol"),
+    "tuang botol ke corong": Command(verb="TUANG", objek="botol", target="corong"),
+    "tunggu 5 detik": Command(verb="TUNGGU", n=5),
+    "ambil hasil": Command(verb="AMBIL", objek="hasil"),
 }
 
 

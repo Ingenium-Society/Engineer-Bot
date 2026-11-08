@@ -43,25 +43,21 @@ HEADING_ORDER = ("N", "E", "S", "W")
 # --------------------------------------------------------------------------
 
 OBJECT_TILES: dict[str, tuple[int, int]] = {
-    "gelas": (0, 2),  # cup of dirty water
-    "corong": (3, 2),  # filter + funnel
-    "toples": (3, 2),  # clean jar
-    "tablet": (3, 2),  # purification tablet
-    "sendok": (3, 2),  # spoon
-    "finish": (3, 2),  # finish pad
+    "pemurni": (0, 2),  # the purifier, set down on the vessel
+    "botol": (0, 2),  # bottle of dirty water
+    "corong": (0, 2),  # the vessel everything happens in
+    "hasil": (0, 2),  # clean water, only after the wait
 }
 
 #: Objects the robot can hold in its hand. Everything else is used in place.
-TAKEABLE = ("gelas", "toples")
+TAKEABLE = ("botol", "hasil")
 
 #: Human-readable names used inside rejection messages.
 OBJECT_LABELS: dict[str, str] = {
-    "gelas": "gelas",
+    "pemurni": "pemurni",
+    "botol": "botol",
     "corong": "corong",
-    "toples": "toples",
-    "tablet": "tablet",
-    "sendok": "sendok",
-    "finish": "area finish",
+    "hasil": "air bersih",
 }
 
 # --------------------------------------------------------------------------
@@ -75,7 +71,7 @@ TURN_DEGREES = (90, 180)
 DIRECTIONS = ("KIRI", "KANAN")
 
 #: Seconds of waiting needed before the filter has done its job.
-FILTER_SECONDS = 10
+FILTER_SECONDS = 5
 
 #: Milliseconds of debounce between two submissions from the same team.
 SUBMIT_RATE_LIMIT_SECONDS = 1.0
@@ -159,14 +155,15 @@ Teks bisa berasal dari pengenalan suara dan mungkin salah dengar atau tanpa
 tanda baca (contoh: "maju dua langka"). Perbaiki salah dengar hanya jika
 maksudnya jelas. Jangan menebak angka, arah, atau benda yang tidak disebut.
 
-Verb yang valid: MAJU, MUNDUR, BELOK, AMBIL, TUANG, TUNGGU, TAMBAH, ADUK, TARUH.
+Verb yang valid: MAJU, MUNDUR, BELOK, AMBIL, TARUH, TUANG, TUNGGU.
 Format: {"verb":"MAJU","n":3,"arah":null,"objek":null,"target":null,"alasan":"<penjelasan>"}
 - MAJU/MUNDUR butuh n (jumlah langkah, angka)
 - BELOK butuh arah ("KIRI"/"KANAN") dan n (90/180)
-- objek dan target HARUS salah satu dari: gelas, corong, toples, tablet, sendok, finish
-- AMBIL butuh objek; TUANG butuh objek dan target
+- objek dan target HARUS salah satu dari: pemurni, botol, corong, hasil
+- AMBIL butuh objek (botol atau hasil)
+- TARUH butuh objek dan target (pemurni ke corong)
+- TUANG butuh objek dan target (botol ke corong)
 - TUNGGU butuh n (detik)
-- TAMBAH/TARUH butuh objek dan target; ADUK butuh objek
 - "alasan" selalu diisi: maksimal 12 kata bahasa Indonesia, jelaskan bagaimana
   kamu membaca kalimat itu — salah dengar yang kamu perbaiki, atau bagian yang
   tidak disebut. Ini dibaca juri manusia sebelum menerima keputusanmu.

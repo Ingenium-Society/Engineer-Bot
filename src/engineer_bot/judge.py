@@ -137,6 +137,7 @@ def _turn(command: Command, state: WorldState) -> JudgeResult:
 
 
 def _take(command: Command, state: WorldState) -> JudgeResult:
+    """AMBIL botol, or AMBIL hasil once the water has settled."""
     objek = command.objek
     if objek is None:
         return _reject(state, command, config.MSG_NEED_DIRECTION)
@@ -146,17 +147,39 @@ def _take(command: Command, state: WorldState) -> JudgeResult:
         return _reject(state, command, config.MSG_HANDS_FULL)
     if not _reachable(state, objek):
         return _reject(state, command, config.MSG_OUT_OF_REACH.format(objek=_label(objek)))
-    if (objek == "gelas" and state.has_cup) or (objek == "toples" and state.has_jar):
+    if objek == "botol" and state.has_bottle:
         return _reject(state, command, config.MSG_OUT_OF_REACH.format(objek=_label(objek)))
+    if objek == "hasil" and not state.waited:
+        # Nothing to pick up until the water has gone through.
+        return _reject(state, command, config.MSG_STEP_MISSING)
 
     new = state.snapshot()
     new.holding = objek
-    if objek == "gelas":
-        new.has_cup = True
-    elif objek == "toples":
-        new.has_jar = True
+    if objek == "botol":
+        new.has_bottle = True
+        message = "AMBIL BOTOL"
+    else:
+        new.finished = True
+        message = "AMBIL AIR BERSIH"
+    return JudgeResult(status="ACCEPT", message=message, state=new, command=command)
+
+
+def _place(command: Command, state: WorldState) -> JudgeResult:
+    """TARUH pemurni di corong — set down, not carried: it is already there."""
+    objek, target = command.objek, command.target
+    if objek is None or target is None:
+        return _reject(state, command, config.MSG_NEED_DIRECTION)
+    if objek != "pemurni" or target != "corong":
+        return _reject(state, command, config.MSG_WRONG_TARGET)
+    if state.pemurni_placed:
+        return _reject(state, command, config.MSG_STEP_MISSING)
+    if not _reachable(state, "corong"):
+        return _reject(state, command, config.MSG_OUT_OF_REACH.format(objek=_label("corong")))
+
+    new = state.snapshot()
+    new.pemurni_placed = True
     return JudgeResult(
-        status="ACCEPT", message=f"AMBIL {_label(objek).upper()}", state=new, command=command
+        status="ACCEPT", message="TARUH PEMURNI DI CORONG", state=new, command=command
     )
 
 
@@ -164,22 +187,22 @@ def _pour(command: Command, state: WorldState) -> JudgeResult:
     objek, target = command.objek, command.target
     if objek is None or target is None:
         return _reject(state, command, config.MSG_NEED_DIRECTION)
-    if state.holding != objek:
-        return _reject(state, command, config.MSG_NOT_HOLDING.format(objek=_label(objek)))
-    if target != "corong":
+    if state.holding != "botol":
+        return _reject(state, command, config.MSG_NOT_HOLDING.format(objek=_label("botol")))
+    if objek != "botol" or target != "corong":
         return _reject(state, command, config.MSG_WRONG_TARGET)
+    if not state.pemurni_placed:
+        # Pouring before the purifier is in place is the classic mistake.
+        return _reject(state, command, config.MSG_STEP_MISSING)
+    if state.poured:
+        return _reject(state, command, config.MSG_STEP_MISSING)
     if not _reachable(state, "corong"):
         return _reject(state, command, config.MSG_OUT_OF_REACH.format(objek=_label("corong")))
 
     new = state.snapshot()
     new.poured = True
     new.holding = None
-    return JudgeResult(
-        status="ACCEPT",
-        message=f"TUANG {_label(objek).upper()} KE CORONG",
-        state=new,
-        command=command,
-    )
+    return JudgeResult(status="ACCEPT", message="TUANG BOTOL KE CORONG", state=new, command=command)
 
 
 def _wait(command: Command, state: WorldState, filter_seconds: int) -> JudgeResult:
@@ -187,73 +210,14 @@ def _wait(command: Command, state: WorldState, filter_seconds: int) -> JudgeResu
         return _reject(state, command, config.MSG_NEED_SECONDS)
     if not 1 <= command.n <= config.WAIT_MAX_SECONDS:
         return _reject(state, command, config.MSG_NEED_SECONDS)
+    if not state.poured:
+        return _reject(state, command, config.MSG_STEP_MISSING)
 
     new = state.snapshot()
-    if new.poured and not new.filtered and command.n >= filter_seconds:
-        new.filtered = True
+    if not new.waited and command.n >= filter_seconds:
+        new.waited = True
     return JudgeResult(
         status="ACCEPT", message=f"TUNGGU {command.n} DETIK", state=new, command=command
-    )
-
-
-def _add_tablet(command: Command, state: WorldState) -> JudgeResult:
-    objek, target = command.objek, command.target
-    if objek is None or target is None:
-        return _reject(state, command, config.MSG_NEED_DIRECTION)
-    if state.holding != "toples":
-        return _reject(state, command, config.MSG_NOT_HOLDING.format(objek=_label("toples")))
-    if objek != "tablet":
-        return _reject(state, command, config.MSG_WRONG_TARGET)
-    if state.tablet_added:
-        return _reject(state, command, config.MSG_STEP_MISSING)
-    if not _reachable(state, "tablet"):
-        return _reject(state, command, config.MSG_OUT_OF_REACH.format(objek=_label("tablet")))
-    if target != "toples":
-        return _reject(state, command, config.MSG_WRONG_TARGET)
-
-    new = state.snapshot()
-    new.tablet_added = True
-    return JudgeResult(status="ACCEPT", message="TAMBAH TABLET", state=new, command=command)
-
-
-def _stir(command: Command, state: WorldState) -> JudgeResult:
-    objek = command.objek
-    if objek is None:
-        return _reject(state, command, config.MSG_NEED_DIRECTION)
-    if state.holding != "toples":
-        return _reject(state, command, config.MSG_NOT_HOLDING.format(objek=_label("toples")))
-    if objek != "sendok":
-        return _reject(state, command, config.MSG_WRONG_TARGET)
-    if not state.tablet_added:
-        return _reject(state, command, config.MSG_STEP_MISSING)
-    if not _reachable(state, "sendok"):
-        return _reject(state, command, config.MSG_OUT_OF_REACH.format(objek=_label("sendok")))
-
-    new = state.snapshot()
-    new.stirred = True
-    return JudgeResult(status="ACCEPT", message="ADUK DENGAN SENDOK", state=new, command=command)
-
-
-def _place(command: Command, state: WorldState) -> JudgeResult:
-    objek, target = command.objek, command.target
-    if objek is None or target is None:
-        return _reject(state, command, config.MSG_NEED_DIRECTION)
-    if state.holding != "toples":
-        return _reject(state, command, config.MSG_NOT_HOLDING.format(objek=_label("toples")))
-    if objek != "toples":
-        return _reject(state, command, config.MSG_WRONG_TARGET)
-    if not (state.tablet_added and state.stirred):
-        return _reject(state, command, config.MSG_STEP_MISSING)
-    if target != "finish":
-        return _reject(state, command, config.MSG_WRONG_TARGET)
-    if not _reachable(state, "finish"):
-        return _reject(state, command, config.MSG_OUT_OF_REACH.format(objek=_label("finish")))
-
-    new = state.snapshot()
-    new.finished = True
-    new.holding = None
-    return JudgeResult(
-        status="ACCEPT", message="TARUH TOPLES DI AREA FINISH", state=new, command=command
     )
 
 
@@ -262,8 +226,6 @@ _HANDLERS = {
     Verb.MUNDUR: _move,
     Verb.BELOK: _turn,
     Verb.AMBIL: _take,
-    Verb.TUANG: _pour,
-    Verb.TAMBAH: _add_tablet,
-    Verb.ADUK: _stir,
     Verb.TARUH: _place,
+    Verb.TUANG: _pour,
 }

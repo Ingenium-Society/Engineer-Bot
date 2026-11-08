@@ -564,9 +564,7 @@ class Game:
             return JudgeResult(
                 status="ACCEPT", message=config.MSG_OPERATOR_ACCEPT, state=team.state
             )
-        return JudgeResult(
-            status="REJECT", message=config.MSG_OPERATOR_REJECT, state=team.state
-        )
+        return JudgeResult(status="REJECT", message=config.MSG_OPERATOR_REJECT, state=team.state)
 
     async def _await_operator(
         self,
@@ -855,9 +853,7 @@ class Game:
                 if team.pending is not None and team.pending.command is not None
                 else None
             ),
-            pending_error=(
-                team.pending.error if team.pending is not None else None
-            ),
+            pending_error=(team.pending.error if team.pending is not None else None),
             pending_reason=(
                 team.pending.command.alasan
                 if team.pending is not None and team.pending.command is not None

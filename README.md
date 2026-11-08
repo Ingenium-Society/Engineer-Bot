@@ -1,8 +1,21 @@
 # The Engineer-Bot
 
-Server, projector and pages for a 9-minute STEM Fair game about **exact instructions**.
+Server, projector and pages for a STEM Fair game about **exact instructions**.
 Two teams give Indonesian commands — spoken or typed — for a club member acting as a robot;
-the robot only obeys what the judge accepts. Task: purify water on a 5×5 grid.
+the robot only obeys what the judge accepts.
+
+The task is six beats: **step forward, put the purifier in the vessel, take the bottle,
+pour, wait, take the clean water.** Six instructions if nobody makes a mistake, and the
+whole chain happens on one tile two steps ahead of the robot:
+
+| # | Instruction | Effect |
+|---|---|---|
+| 1 | `maju 2` | reach the vessel |
+| 2 | `taruh pemurni di corong` | purifier in place |
+| 3 | `ambil botol` | bottle in hand |
+| 4 | `tuang botol ke corong` | poured — the pour is rejected if the purifier is not in yet |
+| 5 | `tunggu 5 detik` | the water goes through |
+| 6 | `ambil hasil` | clean water, and the round is won |
 
 Play is **turn based**: team A goes first, then B, then A again. The server laptop also
 drives the projector, which shows whose turn it is, the instruction as it is being typed,
@@ -527,7 +540,7 @@ Small additions, all to keep the robot's answers understandable:
 
 - `Belok berapa derajat?` for `BELOK` without a usable angle, instead of
   *Arah atau benda belum jelas.*
-- `Benda itu tidak bisa diambil.` for `AMBIL` on the funnel, spoon, tablet or finish pad.
+- `Benda itu tidak bisa diambil.` for `AMBIL` on the purifier or the vessel.
 - `Tidak terdengar. Coba lagi.` when the microphone opened but heard nothing — the brief
   lists the other voice statuses but not the silent case.
 
