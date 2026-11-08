@@ -222,12 +222,16 @@ def create_app(settings: config.Settings | None = None) -> FastAPI:
                     # A team page may only claim "voice" or "keyboard"; the
                     # operator source is reserved for the admin socket.
                     claimed = message.get("source")
-                    await game.submit(
-                        team_id,
-                        str(message.get("text", "")),
-                        source="voice" if claimed == "voice" else "keyboard",
-                        raw=_as_text(message.get("raw")),
-                        stt_ms=_as_float(message.get("stt_ms")),
+                    # Spawned, not awaited: submit() waits for the judge, and
+                    # this socket must stay free to receive drafts and status.
+                    _spawn(
+                        game.submit(
+                            team_id,
+                            str(message.get("text", "")),
+                            source="voice" if claimed == "voice" else "keyboard",
+                            raw=_as_text(message.get("raw")),
+                            stt_ms=_as_float(message.get("stt_ms")),
+                        )
                     )
                 elif kind == "stt_status":
                     await game.set_stt_status(
@@ -300,9 +304,28 @@ async def _handle_admin(game: Game, message: dict[str, Any]) -> None:
     elif kind == "redo" and team_id in TEAM_IDS:
         await game.redo(team_id)
     elif kind == "operator_submit" and team_id in TEAM_IDS:
-        await game.operator_submit(team_id, str(message.get("text", "")))
+        _spawn(game.operator_submit(team_id, str(message.get("text", ""))))
     elif kind == "force" and team_id in TEAM_IDS:
-        await game.force(team_id, str(message.get("decision", "")), message.get("text"))
+        _spawn(game.force(team_id, str(message.get("decision", "")), message.get("text")))
+
+
+def _spawn(coro) -> None:
+    """Run an action without blocking the socket that asked for it.
+
+    submit() and force() wait for the judge's decision. Awaiting them inside the
+    handler that receives that decision deadlocks: the socket cannot deliver
+    the click it is waiting for.
+    """
+
+    def _report(task: asyncio.Task) -> None:
+        if task.cancelled():
+            return
+        error = task.exception()
+        if error is not None:
+            log.error("action failed: %r", error, exc_info=error)
+
+    task = asyncio.create_task(coro)
+    task.add_done_callback(_report)
 
 
 def _as_text(value: Any) -> str | None:
