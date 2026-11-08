@@ -867,12 +867,14 @@
     }
 
     function paintProcessing() {
+      // The room wants to read what the team said, not the status. The
+      // sentence is the headline while the judge decides.
       setStage(
         'processing',
         view.turn ? 'GILIRAN ' + label(view.turn) : 'MEMPROSES',
         '',
-        'MENUNGGU JURI…',
-        view.pending_text ? '"' + view.pending_text + '"' : 'Juri memeriksa instruksi',
+        view.pending_text ? '"' + view.pending_text + '"' : 'MENUNGGU JURI…',
+        view.pending_text ? 'Menunggu juri…' : '',
         ''
       );
     }
