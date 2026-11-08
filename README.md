@@ -39,8 +39,21 @@ Requires [uv](https://docs.astral.sh/uv/) and Python 3.12+. Nothing else.
 ```bash
 uv sync                                   # creates .venv and installs from uv.lock
 cp .env.example .env                      # then edit if you have an API key
-uv run python -m engineer_bot             # starts the server on 0.0.0.0:8000
+bash run.sh                               # tunnel + server, one command
 ```
+
+`run.sh` opens a cloudflared quick tunnel, waits for its URL, hands it to the
+app as `PUBLIC_URL`, and starts the server. Ctrl-C stops both — the tunnel does
+not survive as an orphan.
+
+```bash
+bash run.sh --lan          # no tunnel: LAN IP + your own certificate
+PORT=9000 bash run.sh      # a different port
+bash run.sh --help
+```
+
+If cloudflared is not installed, or the tunnel does not come up within 20 s, it
+falls back to LAN mode by itself.
 
 Add `--extra stt` to `uv sync` if you want server-side speech recognition
 (`STT_MODE=server`). Without it the game still runs; the page falls back to the keyboard.
