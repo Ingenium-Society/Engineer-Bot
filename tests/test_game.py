@@ -13,9 +13,9 @@ from engineer_bot.models import WorldState
 
 OPTIMAL = [
     "maju 2",
-    "taruh pemurni di corong",
+    "taruh pemurni",
     "ambil botol",
-    "tuang botol ke corong",
+    "tuang botol",
     "tunggu 5 detik",
     "ambil hasil",
 ]

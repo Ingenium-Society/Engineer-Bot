@@ -165,11 +165,17 @@ def _take(command: Command, state: WorldState) -> JudgeResult:
 
 
 def _place(command: Command, state: WorldState) -> JudgeResult:
-    """TARUH pemurni di corong — set down, not carried: it is already there."""
-    objek, target = command.objek, command.target
-    if objek is None or target is None:
+    """TARUH pemurni — set down, not carried: it is already there.
+
+    There is one vessel on the table, so "taruh pemurni" is a complete
+    instruction and the target is implied.
+    """
+    objek = command.objek
+    if objek is None:
         return _reject(state, command, config.MSG_NEED_DIRECTION)
-    if objek != "pemurni" or target != "corong":
+    if objek != "pemurni":
+        return _reject(state, command, config.MSG_WRONG_TARGET)
+    if command.target not in (None, "corong"):
         return _reject(state, command, config.MSG_WRONG_TARGET)
     if state.pemurni_placed:
         return _reject(state, command, config.MSG_STEP_MISSING)
@@ -184,12 +190,13 @@ def _place(command: Command, state: WorldState) -> JudgeResult:
 
 
 def _pour(command: Command, state: WorldState) -> JudgeResult:
-    objek, target = command.objek, command.target
-    if objek is None or target is None:
+    """TUANG botol — the vessel is the only place to pour."""
+    objek = command.objek
+    if objek is None:
         return _reject(state, command, config.MSG_NEED_DIRECTION)
     if state.holding != "botol":
         return _reject(state, command, config.MSG_NOT_HOLDING.format(objek=_label("botol")))
-    if objek != "botol" or target != "corong":
+    if objek != "botol" or command.target not in (None, "corong"):
         return _reject(state, command, config.MSG_WRONG_TARGET)
     if not state.pemurni_placed:
         # Pouring before the purifier is in place is the classic mistake.
@@ -202,7 +209,7 @@ def _pour(command: Command, state: WorldState) -> JudgeResult:
     new = state.snapshot()
     new.poured = True
     new.holding = None
-    return JudgeResult(status="ACCEPT", message="TUANG BOTOL KE CORONG", state=new, command=command)
+    return JudgeResult(status="ACCEPT", message="TUANG BOTOL", state=new, command=command)
 
 
 def _wait(command: Command, state: WorldState, filter_seconds: int) -> JudgeResult:

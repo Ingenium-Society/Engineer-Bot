@@ -11,9 +11,9 @@ whole chain happens on one tile two steps ahead of the robot:
 | # | Instruction | Effect |
 |---|---|---|
 | 1 | `maju 2` | reach the vessel |
-| 2 | `taruh pemurni di corong` | purifier in place |
+| 2 | `taruh pemurni` | purifier in place — the vessel is implied |
 | 3 | `ambil botol` | bottle in hand |
-| 4 | `tuang botol ke corong` | poured — the pour is rejected if the purifier is not in yet |
+| 4 | `tuang botol` | poured — rejected if the purifier is not in yet |
 | 5 | `tunggu 5 detik` | the water goes through |
 | 6 | `ambil hasil` | clean water, and the round is won |
 

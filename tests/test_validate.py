@@ -145,9 +145,15 @@ def test_take_the_bottle_twice():
 
 
 def test_place_the_purifier():
-    result = run(Verb.TARUH, at(0, 2), objek="pemurni", target="corong")
+    """One vessel, so "taruh pemurni" needs no target."""
+    result = run(Verb.TARUH, at(0, 2), objek="pemurni")
     assert result.status == "ACCEPT"
     assert result.state.pemurni_placed is True
+
+
+def test_place_the_purifier_with_a_target_also_works():
+    result = run(Verb.TARUH, at(0, 2), objek="pemurni", target="corong")
+    assert result.status == "ACCEPT"
 
 
 def test_place_somewhere_else():
@@ -161,12 +167,12 @@ def test_place_the_purifier_twice():
 
 
 def test_place_away_from_the_vessel():
-    result = run(Verb.TARUH, objek="pemurni", target="corong")
+    result = run(Verb.TARUH, objek="pemurni")
     assert result.message == config.MSG_OUT_OF_REACH.format(objek="corong")
 
 
-def test_place_without_a_target():
-    result = run(Verb.TARUH, at(0, 2), objek="pemurni")
+def test_place_without_an_object():
+    result = run(Verb.TARUH, at(0, 2))
     assert result.message == config.MSG_NEED_DIRECTION
 
 
@@ -175,10 +181,7 @@ def test_place_without_a_target():
 
 def test_pour_the_bottle():
     result = run(
-        Verb.TUANG,
-        at(0, 2, holding="botol", pemurni_placed=True),
-        objek="botol",
-        target="corong",
+        Verb.TUANG, at(0, 2, holding="botol", pemurni_placed=True), objek="botol"
     )
     assert result.status == "ACCEPT"
     assert result.state.poured is True
@@ -186,13 +189,13 @@ def test_pour_the_bottle():
 
 
 def test_pour_before_the_purifier_is_placed():
-    result = run(Verb.TUANG, at(0, 2, holding="botol"), objek="botol", target="corong")
+    result = run(Verb.TUANG, at(0, 2, holding="botol"), objek="botol")
     assert result.status == "REJECT"
     assert result.message == config.MSG_STEP_MISSING
 
 
 def test_pour_without_holding_anything():
-    result = run(Verb.TUANG, at(0, 2, pemurni_placed=True), objek="botol", target="corong")
+    result = run(Verb.TUANG, at(0, 2, pemurni_placed=True), objek="botol")
     assert result.message == config.MSG_NOT_HOLDING.format(objek="botol")
 
 
@@ -271,9 +274,9 @@ def test_snapshot_survives_later_changes():
 
 SIX_BEATS = [
     (Verb.MAJU, {"n": 2}),
-    (Verb.TARUH, {"objek": "pemurni", "target": "corong"}),
+    (Verb.TARUH, {"objek": "pemurni"}),
     (Verb.AMBIL, {"objek": "botol"}),
-    (Verb.TUANG, {"objek": "botol", "target": "corong"}),
+    (Verb.TUANG, {"objek": "botol"}),
     (Verb.TUNGGU, {"n": config.FILTER_SECONDS}),
     (Verb.AMBIL, {"objek": "hasil"}),
 ]

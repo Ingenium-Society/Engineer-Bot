@@ -22,9 +22,9 @@ from engineer_bot.models import Command, TranslationResult  # noqa: E402
 
 OPTIMAL = [
     "maju 2",
-    "taruh pemurni di corong",
+    "taruh pemurni",
     "ambil botol",
-    "tuang botol ke corong",
+    "tuang botol",
     "tunggu 5 detik",
     "ambil hasil",
 ]
@@ -34,9 +34,9 @@ OPTIMAL = [
 #: rule-based fallback any more, so the dry run has to bring its own.
 READINGS: dict[str, Command] = {
     "maju 2": Command(verb="MAJU", n=2),
-    "taruh pemurni di corong": Command(verb="TARUH", objek="pemurni", target="corong"),
+    "taruh pemurni": Command(verb="TARUH", objek="pemurni"),
     "ambil botol": Command(verb="AMBIL", objek="botol"),
-    "tuang botol ke corong": Command(verb="TUANG", objek="botol", target="corong"),
+    "tuang botol": Command(verb="TUANG", objek="botol"),
     "tunggu 5 detik": Command(verb="TUNGGU", n=5),
     "ambil hasil": Command(verb="AMBIL", objek="hasil"),
 }

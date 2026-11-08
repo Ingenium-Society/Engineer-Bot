@@ -159,10 +159,10 @@ Verb yang valid: MAJU, MUNDUR, BELOK, AMBIL, TARUH, TUANG, TUNGGU.
 Format: {"verb":"MAJU","n":3,"arah":null,"objek":null,"target":null,"alasan":"<penjelasan>"}
 - MAJU/MUNDUR butuh n (jumlah langkah, angka)
 - BELOK butuh arah ("KIRI"/"KANAN") dan n (90/180)
-- objek dan target HARUS salah satu dari: pemurni, botol, corong, hasil
+- objek HARUS salah satu dari: pemurni, botol, corong, hasil
 - AMBIL butuh objek (botol atau hasil)
-- TARUH butuh objek dan target (pemurni ke corong)
-- TUANG butuh objek dan target (botol ke corong)
+- TARUH butuh objek (pemurni); target boleh null, tidak perlu disebut
+- TUANG butuh objek (botol); target boleh null atau "corong"
 - TUNGGU butuh n (detik)
 - "alasan" selalu diisi: maksimal 12 kata bahasa Indonesia, jelaskan bagaimana
   kamu membaca kalimat itu — salah dengar yang kamu perbaiki, atau bagian yang

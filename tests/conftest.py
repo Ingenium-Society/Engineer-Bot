@@ -58,9 +58,9 @@ READINGS: dict[str, Command] = {
     "eh maju dua langka": Command(verb="MAJU", n=2),
     "eh maju dua": Command(verb="MAJU", n=2),
     "belok kanan 90": Command(verb="BELOK", arah="KANAN", n=90),
-    "taruh pemurni di corong": Command(verb="TARUH", objek="pemurni", target="corong"),
+    "taruh pemurni": Command(verb="TARUH", objek="pemurni"),
     "ambil botol": Command(verb="AMBIL", objek="botol"),
-    "tuang botol ke corong": Command(verb="TUANG", objek="botol", target="corong"),
+    "tuang botol": Command(verb="TUANG", objek="botol"),
     "tunggu 5 detik": Command(verb="TUNGGU", n=5),
     "ambil hasil": Command(verb="AMBIL", objek="hasil"),
 }
